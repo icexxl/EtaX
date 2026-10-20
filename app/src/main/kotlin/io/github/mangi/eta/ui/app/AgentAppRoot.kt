@@ -64,6 +64,7 @@ import io.github.mangi.eta.ui.pages.providers.CommunityCatalogScreen
 import io.github.mangi.eta.ui.pages.providers.ModelProviderDetailScreen
 import io.github.mangi.eta.ui.pages.providers.ModelProviderListScreen
 import io.github.mangi.eta.ui.screens.backup.DataBackupScreen
+import io.github.mangi.eta.channel.openclaw.OpenClawScreen
 import io.github.mangi.eta.ui.screens.browser.AgentBrowserScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterDetailScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterEditorScreen
@@ -404,6 +405,11 @@ fun AgentAppRoot(
             entry<AppRoute.Browser>(swipeDismiss = swipeDismiss) {
                 RoutedShell(route = AppRoute.Browser) {
                     AgentBrowserScreen()
+                }
+            }
+            entry<AppRoute.OpenClaw>(swipeDismiss = swipeDismiss) {
+                RoutedShell(route = AppRoute.OpenClaw) {
+                    OpenClawScreen(onBack = { if (navigator.current() == AppRoute.OpenClaw) popRoute() })
                 }
             }
             entry<AppRoute.Terminal>(swipeDismiss = swipeDismiss) {

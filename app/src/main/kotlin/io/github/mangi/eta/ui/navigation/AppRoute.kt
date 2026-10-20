@@ -12,6 +12,9 @@ sealed interface AppRoute : NavKey {
     data object Browser : AppRoute
 
     @Serializable
+    data object OpenClaw : AppRoute
+
+    @Serializable
     data object Terminal : AppRoute
 
     @Serializable

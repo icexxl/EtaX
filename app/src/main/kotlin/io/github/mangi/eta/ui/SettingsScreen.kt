@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SettingsVoice
@@ -412,6 +413,17 @@ private fun SettingsPageContent(
                             )
                         },
                         onClick = { onNavigate(AppRoute.LinuxEnvironment) },
+                    )
+                }
+            }
+
+            item(key = "openclaw_channel") {
+                EtaPreferenceGroup {
+                    EtaArrowPreference(
+                        title = "OpenClaw 渠道",
+                        summary = "与 OpenClaw agent 对话",
+                        startAction = { EtaPreferenceIcon(Icons.Rounded.Forum, tint = EtaPreferenceColors.Blue) },
+                        onClick = { onNavigate(AppRoute.OpenClaw) },
                     )
                 }
             }
