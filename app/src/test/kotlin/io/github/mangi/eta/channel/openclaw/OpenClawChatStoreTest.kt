@@ -16,6 +16,15 @@ class OpenClawChatStoreTest {
 
     private lateinit var settings: OpenClawSettings
     private lateinit var history: OpenClawHistory
+    private lateinit var tokenStore: FakeTokenStore
+
+    /** 内存版 Token 存储：Robolectric 没有 AndroidKeyStore。 */
+    private class FakeTokenStore : OpenClawTokenStore {
+        var value: String? = null
+        override fun token(): String? = value
+        override fun setToken(token: String) { value = token }
+        override fun clear() { value = null }
+    }
 
     private class FakeApi : OpenClawApi {
         override suspend fun health(config: OpenClawConfig) = Result.failure<HealthResponse>(UnsupportedOperationException())
@@ -30,7 +39,8 @@ class OpenClawChatStoreTest {
     @Before
     fun setUp() {
         val context: Context = RuntimeEnvironment.getApplication()
-        settings = OpenClawSettings(context)
+        tokenStore = FakeTokenStore()
+        settings = OpenClawSettings(context, tokenStore)
         history = OpenClawHistory(context)
         settings.save(OpenClawConfig(baseUrl = "http://127.0.0.1:1", token = "t", conversationId = "c_default"))
     }
@@ -46,6 +56,28 @@ class OpenClawChatStoreTest {
             text = text,
             timestamp = seq * 1000,
         )
+
+    @Test
+    fun `token is stored through the token store, not preferences`() {
+        settings.save(settings.load().copy(token = "secret-token"))
+        assertEquals("secret-token", tokenStore.value)
+        assertEquals("secret-token", settings.load().token)
+    }
+
+    @Test
+    fun `legacy plaintext token is migrated`() {
+        val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("openclaw_channel", Context.MODE_PRIVATE)
+            .edit()
+            .putString("token", "legacy-token")
+            .commit()
+
+        // 必须用空存储，否则会命中已有 token 而跳过迁移分支
+        val freshStore = FakeTokenStore()
+        val loaded = OpenClawSettings(context, freshStore).load()
+        assertEquals("legacy-token", loaded.token)
+        assertEquals("legacy-token", freshStore.value)
+    }
 
     @Test
     fun `records are bucketed per conversation`() {

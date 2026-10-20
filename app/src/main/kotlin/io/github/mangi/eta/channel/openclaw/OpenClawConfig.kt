@@ -27,25 +27,44 @@ internal data class OpenClawConfig(
     }
 }
 
-internal class OpenClawSettings(context: Context) {
+internal class OpenClawSettings(
+    context: Context,
+    private val tokenStore: OpenClawTokenStore = OpenClawSecretStore(context),
+) {
     private val prefs = context.applicationContext
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun load(): OpenClawConfig = OpenClawConfig(
         baseUrl = prefs.getString(KEY_BASE_URL, "").orEmpty(),
-        token = prefs.getString(KEY_TOKEN, "").orEmpty(),
+        token = readToken(),
         agentId = prefs.getString(KEY_AGENT_ID, "main").orEmpty().ifBlank { "main" },
         conversationId = prefs.getString(KEY_CONVERSATION_ID, "c_default").orEmpty()
             .ifBlank { "c_default" },
     )
 
     fun save(config: OpenClawConfig) {
+        tokenStore.setToken(config.token)
         prefs.edit {
             putString(KEY_BASE_URL, config.baseUrl.trim())
-            putString(KEY_TOKEN, config.token.trim())
             putString(KEY_AGENT_ID, config.agentId.trim().ifBlank { "main" })
             putString(KEY_CONVERSATION_ID, config.conversationId.trim().ifBlank { "c_default" })
         }
+    }
+
+    /**
+     * Token 走 Keystore；若检测到旧版本的明文条目，就地迁移并删除。
+     */
+    private fun readToken(): String {
+        tokenStore.token()?.let { return it }
+        val legacy = prefs.getString(KEY_TOKEN, "").orEmpty().trim()
+        if (legacy.isNotEmpty()) {
+            runCatching {
+                tokenStore.setToken(legacy)
+                prefs.edit { remove(KEY_TOKEN) }
+            }
+            return legacy
+        }
+        return ""
     }
 
     private companion object {
