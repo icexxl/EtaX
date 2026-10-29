@@ -30,17 +30,17 @@ require(buildMetadata == null || buildMetadata.matches(Regex("[0-9A-Za-z.-]+")))
 val buildMetadataSuffix = buildMetadata?.let { "+$it" }.orEmpty()
 
 android {
-    namespace = "io.github.mangi.eta"
+    namespace = "io.github.icexxl.etax"
     compileSdk = 37
     ndkVersion = libs.versions.ndk.get()
 
     defaultConfig {
-        applicationId = "io.github.mangi.eta"
+        applicationId = "io.github.icexxl.etax"
         minSdk = 33
         targetSdk = 37
         // versionCode 规则：yyyyMMdd + 两位当日序号（01 起），发版时随 versionName 一起手动递增。
-        versionCode = 2026101401
-        versionName = "3.3.1"
+        versionCode = 10000
+        versionName = "1.0"
     }
 
     signingConfigs {

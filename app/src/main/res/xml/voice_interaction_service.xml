@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:recognitionService="io.github.mangi.eta.agent.voice.EtaRecognitionService"
-    android:sessionService="io.github.mangi.eta.agent.voice.EtaVoiceInteractionSessionService"
-    android:settingsActivity="io.github.mangi.eta.ui.MainActivity"
+    android:recognitionService="io.github.icexxl.etax.agent.voice.EtaRecognitionService"
+    android:sessionService="io.github.icexxl.etax.agent.voice.EtaVoiceInteractionSessionService"
+    android:settingsActivity="io.github.icexxl.etax.ui.MainActivity"
     android:supportsAssist="true"
     android:usesAssistData="true"
     android:usesAssistScreenshots="true"
