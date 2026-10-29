@@ -23,6 +23,7 @@ class AgentRuntimePolicyTest {
                 browserTools = false,
                 thinking = false,
                 autoCompaction = false,
+                subagentTools = false,
             ),
             AgentRuntimePolicy.permissions(null),
         )
@@ -40,6 +41,7 @@ class AgentRuntimePolicyTest {
                 deviceSensitiveReadTools = true,
                 deviceSensitiveActionTools = true,
                 thinking = true,
+                subagentTools = true,
             ),
             AgentRuntimePolicy.permissions(preferences),
         )
@@ -55,6 +57,7 @@ class AgentRuntimePolicyTest {
                 browserTools = false,
                 thinking = false,
                 autoCompaction = false,
+                subagentTools = false,
             ),
             AgentRuntimePolicy.permissions(preferences),
         )
@@ -85,11 +88,13 @@ class AgentRuntimePolicyTest {
                 deviceDirectTools = true,
                 deviceSensitiveReadTools = true,
                 deviceSensitiveActionTools = true,
+                subagentTools = true,
             ),
             permissions = AgentRuntimePolicy.Permissions(
                 terminalTools = false,
                 browserTools = false,
                 thinking = false,
+                subagentTools = false,
             ),
         )
 
@@ -100,6 +105,7 @@ class AgentRuntimePolicyTest {
         assertFalse(constrained.deviceDirectTools)
         assertFalse(constrained.deviceSensitiveReadTools)
         assertFalse(constrained.deviceSensitiveActionTools)
+        assertFalse(constrained.subagentTools)
     }
 
     @Test
@@ -109,17 +115,19 @@ class AgentRuntimePolicyTest {
                 terminalTools = false,
                 browserTools = true,
                 thinking = false,
-            ),
+            ).copy(subagentTools = false),
             permissions = AgentRuntimePolicy.Permissions(
                 terminalTools = true,
                 browserTools = true,
                 thinking = true,
+                subagentTools = true,
             ),
         )
 
         assertFalse(constrained.terminalTools)
         assertTrue(constrained.browserTools)
         assertFalse(constrained.thinkingEnabled)
+        assertFalse(constrained.subagentTools)
     }
 
     @Test
@@ -130,7 +138,7 @@ class AgentRuntimePolicyTest {
                 browserTools = false,
                 thinking = true,
             ).copy(
-                extraBodyJson = """{"thinking":{"budget_tokens":4096},"temperature":0.2}""",
+                extraBodyJson = """{"thinking":{"budget_tokens":4096},"temperature":0.2,"generation_config":{"thinking_level":"high","thinking_summaries":"auto","max_output_tokens":4096}}""",
                 customBody = listOf(
                     CustomBody("reasoning_effort", JsonPrimitive("high")),
                     CustomBody(
@@ -155,6 +163,10 @@ class AgentRuntimePolicyTest {
         val extra = JSONObject(constrained.extraBodyJson)
         assertFalse(extra.has("thinking"))
         assertEquals(0.2, extra.getDouble("temperature"), 0.0)
+        val generation = extra.getJSONObject("generation_config")
+        assertFalse(generation.has("thinking_level"))
+        assertFalse(generation.has("thinking_summaries"))
+        assertEquals(4096, generation.getInt("max_output_tokens"))
         assertEquals(listOf("metadata"), constrained.customBody.map { it.key })
         val metadata = constrained.customBody.single().value as JsonObject
         assertFalse("enable_thinking" in metadata)

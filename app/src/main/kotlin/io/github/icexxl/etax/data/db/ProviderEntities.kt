@@ -7,6 +7,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Relation
+import io.github.icexxl.etax.data.model.GeminiProviderSetting
 import io.github.icexxl.etax.data.model.AnthropicProviderSetting
 import io.github.icexxl.etax.data.model.CustomBody
 import io.github.icexxl.etax.data.model.CustomHeader
@@ -17,8 +18,10 @@ import io.github.icexxl.etax.data.model.ModelSource
 import io.github.icexxl.etax.data.model.OpenAiCompatibleProviderSetting
 import io.github.icexxl.etax.data.model.OpenAiEndpointMode
 import io.github.icexxl.etax.data.model.ProviderSetting
+import io.github.icexxl.etax.data.model.ProviderAuthModes
 import io.github.icexxl.etax.data.model.ProviderTypes
 import io.github.icexxl.etax.data.provider.ProviderSourceRegistry
+import io.github.icexxl.etax.data.provider.ProviderConnectionProfile
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
@@ -43,6 +46,8 @@ internal data class ProviderEntity(
     @ColumnInfo(name = "hosted_web_search_enabled", defaultValue = "0")
     val hostedWebSearchEnabled: Boolean,
     @ColumnInfo(name = "anthropic_version") val anthropicVersion: String,
+    @ColumnInfo(name = "auth_mode", defaultValue = "'api_key'")
+    val authMode: String = ProviderAuthModes.API_KEY,
 )
 
 @Serializable
@@ -105,7 +110,8 @@ internal fun ProviderSetting.toEntity(): ProviderEntity =
         type = storageType,
         name = name,
         baseUrl = baseUrl,
-        apiKey = apiKey,
+        apiKey = apiKey.takeIf { authMode == ProviderAuthModes.API_KEY }.orEmpty(),
+        authMode = authMode,
         isEnabled = isEnabled,
         isBuiltIn = isBuiltIn,
         sortOrder = sortOrder,
@@ -117,6 +123,7 @@ internal fun ProviderSetting.toEntity(): ProviderEntity =
             is OpenAiCompatibleProviderSetting -> endpointMode
             is CustomProviderSetting -> endpointMode
             is AnthropicProviderSetting -> OpenAiEndpointMode.CHAT_COMPLETIONS
+            is GeminiProviderSetting -> ""
         },
         hostedWebSearchEnabled = hostedWebSearchEnabled,
         anthropicVersion = when (this) {
@@ -132,7 +139,7 @@ internal fun ProviderWithModels.toDomain(): ProviderSetting {
     val domainModels = models
         .sortedBy { it.sortOrder }
         .map(ProviderModelEntity::toDomain)
-    val sourceType = ProviderSourceRegistry.resolve(
+    val sourceType = ProviderConnectionProfile.forAuthMode(provider.authMode)?.sourceType ?: ProviderSourceRegistry.resolve(
         providerId = provider.id,
         baseUrl = provider.baseUrl,
         providerType = provider.type,
@@ -143,7 +150,8 @@ internal fun ProviderWithModels.toDomain(): ProviderSetting {
             name = provider.name,
             baseUrl = provider.baseUrl,
             sourceType = sourceType,
-            apiKey = provider.apiKey,
+            apiKey = provider.apiKey.takeIf { provider.authMode == ProviderAuthModes.API_KEY }.orEmpty(),
+            authMode = provider.authMode,
             isEnabled = provider.isEnabled,
             isBuiltIn = provider.isBuiltIn,
             sortOrder = provider.sortOrder,
@@ -157,12 +165,30 @@ internal fun ProviderWithModels.toDomain(): ProviderSetting {
             },
         )
 
-        ProviderTypes.CUSTOM -> CustomProviderSetting(
+        ProviderTypes.GEMINI -> GeminiProviderSetting(
             id = provider.id,
             name = provider.name,
             baseUrl = provider.baseUrl,
             sourceType = sourceType,
             apiKey = provider.apiKey,
+            isEnabled = provider.isEnabled,
+            isBuiltIn = provider.isBuiltIn,
+            sortOrder = provider.sortOrder,
+            systemPrompt = provider.systemPrompt,
+            models = domainModels,
+            customHeaders = ProviderJson.decodeHeaders(provider.customHeadersJson),
+            customBody = ProviderJson.decodeBody(provider.customBodyJson),
+            createdAt = provider.createdAt,
+            hostedWebSearchEnabled = provider.hostedWebSearchEnabled,
+        )
+
+        ProviderTypes.CUSTOM -> CustomProviderSetting(
+            id = provider.id,
+            name = provider.name,
+            baseUrl = provider.baseUrl,
+            sourceType = sourceType,
+            apiKey = provider.apiKey.takeIf { provider.authMode == ProviderAuthModes.API_KEY }.orEmpty(),
+            authMode = provider.authMode,
             isEnabled = provider.isEnabled,
             isBuiltIn = provider.isBuiltIn,
             sortOrder = provider.sortOrder,
@@ -180,7 +206,8 @@ internal fun ProviderWithModels.toDomain(): ProviderSetting {
             name = provider.name,
             baseUrl = provider.baseUrl,
             sourceType = sourceType,
-            apiKey = provider.apiKey,
+            apiKey = provider.apiKey.takeIf { provider.authMode == ProviderAuthModes.API_KEY }.orEmpty(),
+            authMode = provider.authMode,
             isEnabled = provider.isEnabled,
             isBuiltIn = provider.isBuiltIn,
             sortOrder = provider.sortOrder,
@@ -199,6 +226,7 @@ private val ProviderSetting.storageType: String
     get() = when (this) {
         is OpenAiCompatibleProviderSetting -> ProviderTypes.OPENAI_COMPATIBLE
         is AnthropicProviderSetting -> ProviderTypes.ANTHROPIC
+        is GeminiProviderSetting -> ProviderTypes.GEMINI
         is CustomProviderSetting -> ProviderTypes.CUSTOM
     }
 

@@ -7,6 +7,7 @@ import android.util.Base64
 import io.github.icexxl.etax.agent.media.AgentImageCodec
 import io.github.icexxl.etax.agent.model.AgentModelClient
 import io.github.icexxl.etax.data.model.ModelReasoningCapabilities
+import io.github.icexxl.etax.data.model.ProviderAuthModes
 import io.github.icexxl.etax.data.model.ReasoningEffort
 import java.io.File
 import java.io.FileOutputStream
@@ -27,6 +28,57 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33, 36])
 class AgentRuntimeWireTest {
+    @Test
+    fun searchSuggestionsCapabilityIsOptionalAndHtmlIsNeverDurable() {
+        val request = AgentRuntimeWire.RunRequest(
+            runId = "search", prompt = "测试", images = emptyList(),
+            config = AgentModelClient.ModelConfig(
+                baseUrl = "https://example.invalid", apiKey = "fixture", model = "fixture", systemPrompt = "",
+                supportsSearchSuggestions = true,
+            ),
+        )
+        val bundle = AgentRuntimeWire.toLegacyBundle(request)
+        assertTrue(AgentRuntimeWire.runRequestFromBundle(bundle).config.supportsSearchSuggestions)
+        bundle.remove("supports_search_suggestions")
+        assertFalse(AgentRuntimeWire.runRequestFromBundle(bundle).config.supportsSearchSuggestions)
+
+        val event = AgentEvent.SearchSuggestions(2, 4, "<div>搜索建议</div>")
+        assertEquals(event, AgentRuntimeWire.eventFromBundle(AgentRuntimeWire.eventToBundle(event)))
+        assertNull(event.recoveryProjection())
+        assertEquals(event, event.replayProjection())
+        assertThrows(IllegalArgumentException::class.java) { AgentEventJsonCodec.encode(event) }
+        assertNull(AgentEventJsonCodec.decode("""{"type":"search_suggestions","round":2,"index":4,"html":"不得恢复"}"""))
+        val oversized = AgentRuntimeWire.eventToBundle(event).apply {
+            putString("html", "中".repeat(SearchSuggestionsPayload.MAX_HTML_BYTES))
+        }
+        assertNull(AgentRuntimeWire.eventFromBundle(oversized))
+        assertFalse(event.toLogLine().contains("搜索建议"))
+    }
+
+    @Test
+    fun oauthWireCarriesOnlyAuthenticationModeAndDropsLegacySecrets() {
+        val request = AgentRuntimeWire.RunRequest(
+            runId = "oauth-wire", prompt = "测试", images = emptyList(),
+            config = AgentModelClient.ModelConfig(
+                providerId = "oauth-provider", authMode = ProviderAuthModes.OPENAI_CHATGPT,
+                baseUrl = "https://api.openai.com/v1", apiKey = "fixture-must-not-cross-ipc",
+                model = "fixture", systemPrompt = "",
+            ),
+        )
+        val bundle = AgentRuntimeWire.toLegacyBundle(request)
+        assertEquals(ProviderAuthModes.OPENAI_CHATGPT, bundle.getString("auth_mode"))
+        assertEquals("", bundle.getString("api_key"))
+        bundle.putString("api_key", "fixture-untrusted-bundle-secret")
+        val restored = AgentRuntimeWire.runRequestFromBundle(bundle)
+        assertEquals("", restored.config.apiKey)
+        assertEquals(ProviderAuthModes.OPENAI_CHATGPT, restored.config.authMode)
+
+        bundle.remove("auth_mode")
+        val legacy = AgentRuntimeWire.runRequestFromBundle(bundle)
+        assertEquals(ProviderAuthModes.API_KEY, legacy.config.authMode)
+        assertEquals("fixture-untrusted-bundle-secret", legacy.config.apiKey)
+    }
+
     @Test
     fun automaticCompactionSettingSurvivesIpcAndDefaultsForOldRequests() {
         val config = AgentModelClient.ModelConfig(

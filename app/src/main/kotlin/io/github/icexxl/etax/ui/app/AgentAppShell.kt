@@ -19,15 +19,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ShortText
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.rounded.AddComment
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +57,9 @@ import io.github.icexxl.etax.ui.components.topBarContainerColor
 import io.github.icexxl.etax.ui.model.ConversationPaneUiState
 import io.github.icexxl.etax.ui.model.ConversationSummaryUi
 import io.github.icexxl.etax.ui.navigation.AppRoute
+import io.github.icexxl.etax.data.model.TtsProvider
+import io.github.icexxl.etax.data.repository.SpeechSettingsRepository
+import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
@@ -66,13 +73,12 @@ import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowListPopup
-import io.github.icexxl.etax.ui.voice.SpeechAutoReadToggle
 
 /**
  * Agent App 统一壳层。
  *
  * - 负责全局 Scaffold、状态栏/横向安全边距、顶层工具栏。
- * - 首页工具栏只保留历史入口与溢出菜单（新建对话、终端、浏览器），保持聊天舞台干净。
+ * - 首页工具栏只保留历史入口与溢出菜单，保持聊天舞台干净。
  * - 非首页子路由统一提供返回按钮与标题，避免每个页面各自像独立设置页。
  * - Settings 由标准二级页骨架自己提供 TopAppBar，壳层在此路由不重复绘制。
  */
@@ -234,7 +240,6 @@ private fun AgentTopBar(
     val actions: @Composable RowScope.() -> Unit = {
         // OpenClaw 模式下不展示 ETA 的新建对话/朗读/工具入口，避免误操作落到 ETA 会话
         if (isHome && !openClawHome) {
-            SpeechAutoReadToggle()
             TopBarOverflowMenu(
                 onNewConversation = onNewConversation,
                 onOpenTerminal = onOpenTerminal,
@@ -251,9 +256,9 @@ private fun AgentTopBar(
     // OpenClaw 首页用 agent 名作标题，与模型对话页共用同一行顶栏，不再另起一行遮挡内容。
     val resolvedTitle = if (isHome && !homeTitle.isNullOrBlank()) homeTitle else titleForRoute(route)
 
-    // 首页聊天舞台与浏览器、终端这类整屏工具页没有可驱动折叠的滚动列表，大标题会一直展开、
+    // 首页聊天舞台与终端这类整屏工具页没有可驱动折叠的滚动列表，大标题会一直展开、
     // 白占一屏顶部；它们使用紧凑标题，其余二级内容页统一使用可折叠大标题。
-    val compactTitle = isHome || route is AppRoute.Browser || route is AppRoute.Terminal
+    val compactTitle = isHome || route is AppRoute.Terminal
     if (compactTitle) {
         SmallTopAppBar(
             title = resolvedTitle,
@@ -291,6 +296,10 @@ private fun TopBarOverflowMenu(
     onOpenBrowser: () -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val speechSettings by remember { SpeechSettingsRepository.settingsFlow() }.collectAsState(initial = null)
+    val hasSpeechPlayback = speechSettings?.let { it.tts != TtsProvider.NONE } == true
+    val autoReadEnabled = speechSettings?.chatAutoSpeak == true
     Box {
         IconButton(onClick = { onRefreshKimiWeb(); showMenu = true }) {
             Icon(
@@ -309,6 +318,9 @@ private fun TopBarOverflowMenu(
             val launchKimiWebText = kimiWebLabel
             val stopKimiWebText = stringResource(R.string.capability_kimi_stop)
             val openBrowserText = stringResource(R.string.action_open_browser)
+            val autoReadText = stringResource(
+                if (autoReadEnabled) R.string.speech_disable_auto_read else R.string.speech_enable_auto_read,
+            )
             val menuItems = remember(
                 newConversationText,
                 openTerminalText,
@@ -316,6 +328,9 @@ private fun TopBarOverflowMenu(
                 openBrowserText,
                 stopKimiWebText,
                 canStopKimiWeb,
+                autoReadText,
+                hasSpeechPlayback,
+                autoReadEnabled,
             ) {
                 listOf(
                     DropdownItem(
@@ -358,7 +373,7 @@ private fun TopBarOverflowMenu(
                             )
                         },
                     ),
-                ) + if (canStopKimiWeb) {
+                ) + (if (canStopKimiWeb) {
                     listOf(
                         DropdownItem(
                             text = stopKimiWebText,
@@ -373,7 +388,21 @@ private fun TopBarOverflowMenu(
                     )
                 } else {
                     emptyList()
-                }
+                }) + if (hasSpeechPlayback) {
+                    listOf(
+                        DropdownItem(
+                            text = autoReadText,
+                            icon = { modifier ->
+                                Icon(
+                                    imageVector = if (autoReadEnabled) Icons.AutoMirrored.Rounded.VolumeUp
+                                        else Icons.AutoMirrored.Rounded.VolumeOff,
+                                    contentDescription = null,
+                                    modifier = modifier.size(TopBarMenuIconSize),
+                                )
+                            },
+                        ),
+                    )
+                } else emptyList()
             }
             ListPopupColumn {
                 menuItems.forEachIndexed { index, item ->
@@ -384,7 +413,13 @@ private fun TopBarOverflowMenu(
                         index = index,
                         onSelectedIndexChange = {
                             showMenu = false
-                            when (index) {
+                            if (hasSpeechPlayback && index == menuItems.lastIndex) {
+                                speechSettings?.let { current ->
+                                    scope.launch {
+                                        SpeechSettingsRepository.save(current.copy(chatAutoSpeak = !current.chatAutoSpeak))
+                                    }
+                                }
+                            } else when (index) {
                                 0 -> onNewConversation()
                                 1 -> onOpenTerminal()
                                 2 -> onLaunchKimiWeb()
@@ -401,12 +436,13 @@ private fun TopBarOverflowMenu(
 
 @Composable
 private fun titleForRoute(route: AppRoute?): String = when (route) {
-    is AppRoute.Home -> ""
-    is AppRoute.Browser -> stringResource(R.string.route_browser)
+    is AppRoute.Home, is AppRoute.Browser -> ""
     is AppRoute.OpenClaw -> "OpenClaw"
     is AppRoute.Terminal -> stringResource(R.string.route_terminal)
     is AppRoute.Tools -> stringResource(R.string.route_tools)
+    is AppRoute.WebToolsSettings -> stringResource(R.string.web_tools_settings_title)
     is AppRoute.Skills -> stringResource(R.string.route_skills)
+    is AppRoute.Subagents -> "Subagent"
     is AppRoute.Characters -> "角色"
     is AppRoute.CharacterDetail -> "角色详情"
     is AppRoute.CharacterEditor -> "编辑角色"

@@ -1,5 +1,6 @@
 package io.github.icexxl.etax.data.provider
 
+import io.github.icexxl.etax.data.model.GeminiProviderSetting
 import io.github.icexxl.etax.data.model.AnthropicProviderSetting
 import io.github.icexxl.etax.data.model.OpenAiCompatibleProviderSetting
 import io.github.icexxl.etax.data.model.OpenAiEndpointMode
@@ -21,6 +22,8 @@ internal object BuiltinProviders {
     const val STEPFUN_ID = "builtin-stepfun"
     const val SILICONFLOW_ID = "builtin-siliconflow"
     const val OPENROUTER_ID = "builtin-openrouter"
+    const val XAI_ID = "builtin-xai"
+    const val GEMINI_ID = "builtin-gemini"
 
     val PROVIDERS: List<ProviderSetting> = listOf(
         OpenAiCompatibleProviderSetting(
@@ -113,7 +116,23 @@ internal object BuiltinProviders {
             isBuiltIn = true,
             sortOrder = 9,
             systemPrompt = DEFAULT_SYSTEM_PROMPT
-        )
+        ),
+        OpenAiCompatibleProviderSetting(
+            id = XAI_ID,
+            name = "xAI",
+            baseUrl = "https://api.x.ai/v1",
+            sourceType = ProviderSourceTypes.XAI,
+            isBuiltIn = true,
+            sortOrder = 10,
+            systemPrompt = DEFAULT_SYSTEM_PROMPT,
+        ),
+        GeminiProviderSetting(
+            id = GEMINI_ID,
+            name = "Gemini",
+            isBuiltIn = true,
+            sortOrder = 11,
+            systemPrompt = DEFAULT_SYSTEM_PROMPT,
+        ),
     )
 
     fun providerById(id: String): ProviderSetting? =

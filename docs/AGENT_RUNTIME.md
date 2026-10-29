@@ -10,12 +10,16 @@ Eta 的 Agent Runtime 负责把一次用户输入组织为模型回合、工具�
 - `AgentConversationCodec`：Provider JSON 与稳定会话 DTO 的转换。
 - `AgentToolCatalog` 及分组目录：模型可见的工具 schema，不执行工具。
 - `AgentTraceFormatter`：只生成可展示、可记录的脱敏摘要。
-- `AgentWebTools`：公开网页搜索、匿名 HTTP 正文读取与当前 run 的分页快照；不占用共享 WebView 会话。
-- `AgentProviderClient`：OpenAI-compatible、Anthropic 等协议边界。
+- `AgentWebTools`：公开网页搜索、匿名 HTTP 正文读取与当前 run 的分页快照；不占用会话 WebView。
+- `AgentProviderClient`：OpenAI-compatible、Anthropic 与 Gemini Interactions 协议边界。
 - `AgentRunController`：取消、暂停和 steering 队列。
 - `AgentRuntimeSession`：每个 run 自持 reply channel，并保证唯一最终结果。
 - `AgentRuntimeRunExecutor`：从 Skill/工具初始化到模型执行、资源清理和终态提交的统一异常边界。
 - `AgentRuntimeService`：Android 生命周期、入口 IPC 和浮层宿主；不再内联 Agent 执行循环。
+- `RuntimeRunRegistry`：按 run 登记准备、执行与提交状态，控制同会话写入和活动任务准入。
+- `GuiControlCoordinator`：手机 GUI 操作阶段的唯一控制权、FIFO 等待和用户接管。
+- `BrowserSessionRegistry`：按已有会话身份管理独立浏览器页面及其生命周期。
+- `AgentRunStore`：UI 侧的多 run 订阅、取消意图与事件缓冲，不决定 Runtime 调度。
 - `ShellProcessSupervisor`：Android/Alpine/Debian Shell 进程的接纳、独立进程组、取消和回收；终端协议不承担进程所有权细节。
 
 ## Loop 语义
@@ -40,12 +44,12 @@ pending steering
 - 只有明确的 `tool_calls` / `tool_use` 终止原因才允许执行工具；`stop`、内容过滤或未知终止原因中夹带的调用一律作为协议矛盾拒绝。
 - 工具 Schema 用于向模型说明参数。Loop 只确认工具在本轮目录中可用，参数原样交给本地执行器或 MCP 服务处理，不在客户端重复运行 JSON Schema 预检。必需参数在实际使用处读取，执行失败作为工具结果返回模型；未使用的额外字段不导致整次调用失败。
 - transcript 只返回本次 run 新增的 assistant、tool 和运行中 steering 消息，不重复旧 history 或本轮初始用户消息。
-- GUI/终端工具保持串行。Android 前台状态和会话式 Shell 都不具备可安全并行的通用语义。
+- 同一 run 的工具批次保持串行；不同会话可以并行。手机前台另按 GUI 操作阶段互斥，终端会话保留各自执行顺序。
 - 单次 run 不设置固定回合数或总时限，由模型自然结束、用户取消或不可恢复错误终止。
 - cancel 是终止信号；pause 是检查点阻塞；steering 是下一回合输入。三者不能互相模拟。
-- cancel 的主线程路径只做原子终态与资源关闭：共享浏览器按 runId 校验归属；终端立即封闭新的前台进程接纳，并在后台按独立进程组终止同步命令与会话、回收所属线程与流；已提交的后台命令由 App 宿主管理，需单独停止。Android 上 `setsid` 或 PID/PGID ownership 握手不可用时会 fail closed；非 Android 测试环境才允许父子树快照回退。终止前还会核验随机 ownership token，避免陈旧 PGID 复用后误杀无关进程。
+- cancel 的主线程路径只发出取消并关闭资源接纳：浏览器按会话实例和 runId 校验归属；终端立即封闭新的前台进程接纳，并在后台按独立进程组终止同步命令与会话、回收所属线程与流；已提交的后台命令由 App 宿主管理，需单独停止。Android 上 `setsid` 或 PID/PGID ownership 握手不可用时会 fail closed；非 Android 测试环境才允许父子树快照回退。终止前还会核验随机 ownership token，避免陈旧 PGID 复用后误杀无关进程。
 - 最终 steering 检查会原子关闭接收入口；Loop 返回后不会再把无人消费的补充指令误报为已接收。补充指令也不会解除 pause。
-- 新 run 替换旧 run、用户取消和正常完成都通过 `AgentRuntimeSession` 的 `RUNNING → COMMITTING → TERMINAL` 状态机竞争唯一终态；提交胜者独占 outbox、归档和最终发布，客户端等待最终结果或 Binder 断连，不按等待时长取消任务。
+- 用户取消和正常完成通过各自 `AgentRuntimeSession` 的 `RUNNING → COMMITTING → TERMINAL` 状态机竞争唯一终态；提交胜者独占 outbox、归档和最终发布，客户端等待最终结果或 Binder 断连，不按等待时长取消任务。新会话的请求不替换其他会话的任务。
 - 入口请求只能缩小工具能力，不能自行授权。Runtime 在开始 run 时裁剪配置，在每次浏览器、终端和设备工具执行前重新读取用户开关，并在 thinking 关闭时移除自定义请求体中的 reasoning/thinking 覆盖字段。
 - 设备工具分为直达工具、敏感读取工具和敏感操作工具，当前均默认开启。Runtime 在每次执行前重新读取用户开关；开关允许且参数符合工具 Schema 后即可执行，不再匹配用户原话，也不维护关键包、系统应用或 Settings key 黑名单。
 - 微信发送不提供专用工具、参数协议或额外策略层，完全使用通用 GUI 工具观察和操作微信界面。
@@ -57,6 +61,20 @@ pending steering
 
 工具接口的设计依据：OpenAI 的 [Function calling](https://developers.openai.com/api/docs/guides/function-calling) 强调清晰的参数说明、可预测的行为，以及由程序提供已经知道的信息；它推荐的 strict mode 属于模型生成侧约束。Anthropic 的 [Writing effective tools for agents](https://www.anthropic.com/engineering/writing-tools-for-agents) 强调无歧义的参数与可操作的错误反馈。这些建议不等同于取消所有输入处理；Eta 将参数解释放在实际执行边界，保留系统权限、资源预算和具体操作所需的语义检查，不维护平行的通用校验器。
 
+## 多会话并行与 GUI 控制权
+
+会话持有历史，run 持有一次执行。App 聊天、手动压缩和回复改写共享同会话单写约束；原有排队、插队和停止仍由用户选择。Runtime 在物化图片前登记 run 与会话占用，重复活动 run 不重新执行，超出准入上限明确失败，限制集中在 `RuntimeRunRegistry`。准备、等待 GUI、暂停和提交中的任务都计入活动集合，没有额外的全局任务排队。系统助手入口保留各自回传及入口内取消行为。
+
+GUI 工具在执行前自动取得控制权，跨模型回合保留，覆盖观察、推理、动作和验证。其他任务按 FIFO 等待，等待可取消；取得控制权后再次检查权限。零参数 `release_gui` 结束调用 run 的操作阶段，正常结束、失败和取消也会收尾；当前底层动作退出后才向下一任务交接。取得控制权先于助手面板关闭等前台副作用，流式工具名称事件只用于展示。
+
+控制权变化或用户暂停后，旧节点和坐标观察失效；依赖当前页面的动作必须先重新 `observe_screen`。浮窗暂停代表整机交还用户，暂停持有者并阻止其他 GUI 任务进入；停止该持有者也不自动恢复手机操作，必须由用户明确恢复。非 GUI 任务继续运行。工具的 GUI 分类由 `AgentToolRequirements` 集中声明，Shell、MCP、文件和普通结构化调用不加入这把锁，也不保证任意命令的外部副作用隔离。
+
+浮窗绑定当前 GUI 控制权，后台任务事件不会覆盖它；执行通知按全部活动任务聚合。UI 选择只决定当前展示对象，后台续发从目标会话及默认模型解析配置。删除运行中会话先取消、保存并确认结果，再删除；结果不完整或保存失败则保留会话。
+
+浏览器按 App 会话 ID 或既有外部归档身份创建独立实例，未绑定会话的手动浏览使用独立页面。各页面的 URL、DOM、预览、取消和接管互不混用，Cookie 与站点存储继续共享。同会话连续 run 复用页面；删除、重置及低内存清理释放空闲页面，活动或挂载中的页面不回收。局部页面销毁不调用应用级缓存或 Cookie 清理；全局清理是明确的独立用户操作。页面仅保留在进程内，不自动重放导航或表单。
+
+多 run 查询返回准备、执行、等待 GUI、暂停和提交状态及会话归属；旧单 run 查询保留兼容投影。App 用活动集合与 checkpoint、outbox 对账；准备阶段尚无 checkpoint 时也可按活动快照重连。GUI 等待与所有权为运行期状态，进程重启后不从持久事件恢复设备控制权。
+
 ## 可选角色上下文
 
 角色按 App 会话绑定；Runtime 从该会话的持久记录读取角色 ID 和备用快照，再冻结本次使用的最新卡片。普通会话及系统助手入口使用默认人格。角色设定、世界书和剧情记忆由独立上下文投影提供，工具规则和执行器继续沿用 Agent 链路。
@@ -67,11 +85,23 @@ pending steering
 
 ## Provider 协议
 
-Provider 默认基础提示词将 Eta 定义为运行在 Android 设备上的 AI 助手，可以回答问题、与用户交流，也可以通过工具了解设备情况并执行操作；回答使用用户的语言，简洁、直接、自然。默认正文以 `BuiltinProviders.DEFAULT_SYSTEM_PROMPT` 为准；Provider 提示词为空时使用该默认值，已有非空配置保持原值。
+Provider 默认基础提示词将 Eta 定义为运行在 Android 设备上的 AI 助手，可以回答问题、与用户交流，也可以通过工具了解设备情况并执行操作；回答使用用户的语言，简洁、直接、自然。默认正文以 `BuiltinProviders.DEFAULT_SYSTEM_PROMPT` 为准；新建内置 Provider 时预填该默认值；用户清空后不再补回默认提示词，已有非空配置保持原值。普通会话使用 Provider 中填写的系统提示词，底层运行规则不强制指定 Eta 身份；绑定角色卡后改用角色卡设定，交流和执行现实任务时均保持角色身份与语气。留空或使用角色卡均不影响工具权限、执行结果真实性和现实记忆边界。
 
-Runtime 独立于 Provider 自定义提示词注入 Eta 身份，以“当前配置的模型”标注 `ModelConfig.model` 的实际值，随本次运行配置更新，不使用模型显示名或历史消息推断当前模型，也不据此推断部署版本、知识截止日期或能力。通用交流规则要求日常问答直接回答、仅在缺少关键参数时澄清、按用户需求调整详略，并如实交代工具操作结果；个性化分析区分事实与推测，不根据零散记录断言性格、动机或心理状态。工具、记忆与 Skills 等系统规则仍按运行时条件追加。
+Runtime 独立于人格设定提供模型信息，以“当前配置的模型”标注 `ModelConfig.model` 的实际值，随本次运行配置更新，不使用模型显示名或历史消息推断当前模型，也不据此推断部署版本、知识截止日期或能力。通用交流规则要求日常问答直接回答、仅在缺少关键参数时澄清、按用户需求调整详略，并如实交代工具操作结果；个性化分析区分事实与推测，不根据零散记录断言性格、动机或心理状态。工具、记忆与 Skills 等系统规则仍按运行时条件追加。
 
 OpenAI-compatible Provider 可在配置页选择 `Chat Completions` 或 `Responses API`。新安装和重置后的内置 OpenAI 默认使用 Responses；数据库中已有 Provider 不会被默认值覆盖。自定义 Provider 和其他内置 Provider 默认仍使用 Chat Completions。
+
+Provider 的认证方式与模型协议分别保存。API Key 保留既有兼容路径；Codex 和 Grok 订阅使用显式连接配置，固定官方地址与协议。OpenAI 使用 Codex 公共客户端的 PKCE 授权，回调监听 `127.0.0.1:1455/auth/callback`；xAI 使用设备码轮询。系统浏览器承载授权，Agent 内置 WebView 不参与账号登录。两种流程均支持取消，回调监听在结束后关闭。
+
+OAuth 凭据由主进程的 `ProviderCredentialRepository` 管理，以 Android Keystore 密钥加密后原子写入不可备份目录；Provider、RemotePreferences、IPC 和备份仅携带认证方式及稳定 Provider 标识，不携带 OAuth token。外部入口的 OAuth 配置在 Runtime 内按本地 Provider 和模型重建，不能指定凭据的目标地址。复制使用新 Provider 标识；删除、重置和切换认证方式清除旧凭据。备份先将导入的订阅连接以停用、无凭据的方式提交，成功清理旧授权后再恢复认证方式及启用状态；提交前失败不触碰原凭据，提交后清理失败明确报告部分成功并保持连接停用，恢复后需要重新登录。
+
+模型推理和远端目录请求在发送前获取有效凭据；同账号并发刷新只执行一次，刷新结果整体保存，登录与注销代次防止迟到结果覆盖当前会话。临时网络错误保留凭据，确定失效后要求重新登录。HTTP 401 仅在响应流消费前允许刷新一次；此恢复不重放模型流或工具。订阅请求禁止重定向，认证及模型路由 Header 不能被自定义请求头覆盖。Codex 退出登录清除本机令牌；Grok 同时尝试撤销远端授权。
+
+Codex 复用 Responses 编解码，使用扁平函数工具、`store: false` 与流式响应，并在后续轮次回传加密推理项。请求发送至 `https://chatgpt.com/backend-api/codex/responses`，工作区 Header 与 Bearer 从同一份令牌获取；刷新后不接受工作区变化。不支持的自定义参数在请求前明确拒绝。Grok 使用订阅代理的 Chat Completions 流。授权说明参见 [Codex 账号认证](https://developers.openai.com/codex/auth/)与 [xAI 身份认证](https://docs.x.ai/build/enterprise)。
+
+OpenAI 初始预设仅包含 GPT-6.1 Sol、GPT-6 Luna 和 GPT-6 Astra，用于尚未同步的连接。Codex 从 `/backend-api/codex/models` 拉取账号目录，查询参数 `client_version` 使用 Eta 的发行版本；解析远端 `slug`、`display_name`、可见性、输入模态、上下文窗口和推理档位，不用公共 API 预设补齐或筛选账号模型。Grok 从订阅代理拉取目录。登录成功后自动同步完整账号目录，模型页手动刷新使用同一路径；成功同步后以远端结果为准，失败保留已有配置。模型列表与默认选择由持久化配置驱动，登录状态不隐藏模型或切换到其他连接；未登录、凭据失效及额度不足在请求时报告。
+
+目录结果携带连接配置快照和非敏感的登录代次，读取结束及同步提交前均校验，模型页离开时取消读取。同步时匹配模型保留本地 ID 和用户覆盖值，自动模型标记为远端来源，并清理远端已移除的自动模型；手动配置保留。预设更新只清理旧预设并补入尚未同步连接的新预设，不覆盖远端模型，也不在保存空连接时重新填充。Grok 目录按实际推理标识、隐藏字段与明确声明的推理档位解释，不接受其中的地址或凭据覆盖；仅列入当前订阅连接采用的 Chat Completions 路由，全部可见模型声明其他协议时明确报错，不把协议不兼容当作空目录。
 
 提供商目录从固定的 `models.dev/api.json` 读取公开元数据，应用内另有随 APK 打包的压缩快照；在线目录通过大小限制、协议和 HTTPS 地址校验后原子缓存，读取失败时使用缓存或快照。目录只列出 Eta 可按 Chat Completions 接入且具有文本输出与工具调用能力的候选模型；读取目录不发送已保存的 API Key。用户选择模型并核对完整 Base URL 后，导入为默认停用、无 API Key 的自定义提供商；后续密钥由用户为该地址填写，已保存的模型和当前选择不随目录刷新改写。
 
@@ -83,15 +113,27 @@ Responses 请求固定使用 `stream:true`、`store:false`，不发送 `previous
 
 兼容接口若在 `response.completed` 中省略 `output` 或返回空数组，Runtime 只使用同一 SSE 流中已经收到的标准文本、推理摘要和函数调用增量完成当前轮次；非空终态始终是权威结果，且本地恢复结果不会冒充 Provider 的 opaque output Items。
 
+OpenAI 请求按当前模型能力配置编码思考档位，不另行维护请求层的型号白名单；Codex 使用账号目录提供的档位，服务端拒绝会如实返回。
+
 推理界面展示 Provider 返回的可见推理内容，不由 Eta 生成或补写。Responses 支持 `reasoning_summary_text.delta` 和 `reasoning_text.delta`；终态读取 reasoning item 的 `summary[]` 与 `content[].reasoning_text`，并兼容旧接口的单字段 `reasoning_text`。标准内容与旧字段同时存在时不重复追加，终态仍按 item 和内容块身份校准流式结果。Responses 只对精确命中官方目录且未被远端显式标记为 `reasoning:false` 的模型补齐推理能力，不会因 Endpoint 类型而假定所有模型支持推理。
 
-Chat Completions 消费 `reasoning_content`，并兼容 `reasoning` 和 `reasoning_details` 中的可见文本或摘要；同一分片同时包含多种表示时只显示一次。Anthropic 消费 `content_block_start` 中已有的文字及后续 `thinking_delta` / `text_delta`，思考签名和加密内容不作为文字展示。三种协议共用 SSE 分帧，支持多行 `data:`、注释心跳和 UTF-8；正文、思考、工具的解释仍由各自 Provider 负责。Chat 在 `finish_reason` 到达时结束可见块，再接收用量与 `[DONE]`；Responses 和 Anthropic 收到各自终态事件后立即收尾，不等待连接关闭。缺少合法终态或 Anthropic 可见/工具块未闭合时返回未完成错误。
+Chat Completions 消费 `reasoning_content`，并兼容 `reasoning` 和 `reasoning_details` 中的可见文本或摘要；同一分片同时包含多种表示时只显示一次。Anthropic 消费 `content_block_start` 中已有的文字及后续 `thinking_delta` / `text_delta`，思考签名和加密内容不作为文字展示。各协议共用 SSE 分帧，支持多行 `data:`、注释心跳和 UTF-8；正文、思考、工具的解释仍由各自 Provider 负责。Chat 在 `finish_reason` 到达时结束可见块，再接收用量与 `[DONE]`；Responses 和 Anthropic 收到各自终态事件后立即收尾，不等待连接关闭。缺少合法终态或 Anthropic 可见/工具块未闭合时返回未完成错误。
 
 Anthropic 工具回合会在当前 run 的模型上下文中按原顺序回传思考块、签名及加密块，供工具结果继续使用；这些 Provider 专用块不进入持久会话。签名待回传时沿用上一轮的系统提示与工具目录并保持原始上下文，自动压缩延后到签名回合完成，强制压缩则明确报错；工具执行仍按实时权限校验。工具回合完成后的上下文压缩会清除旧签名。
 
-Chat Completions、Responses 与 Anthropic Messages 在 Provider 边界统一投影为带 `round + block index` 身份的正文、思考和工具块。Responses 额外使用 `item_id/output_index/content_index` 区分同一轮中的多个 output item；Chat Completions 在 delta 类型切换时创建新块；Anthropic 直接保留 `content_block.index`。正文、思考或工具类型一旦切换，上一段可见块立即定稿，后续同类型内容也不会跨过工具卡片回填到旧块。终态只在 Provider 的权威内容与已流式内容不一致时携带一次替换，不用整轮聚合正文覆盖最后一个块。
+Chat Completions、Responses、Anthropic Messages 与 Gemini Interactions 在 Provider 边界统一投影为带 `round + block index` 身份的正文、思考和工具块。Responses 额外使用 `item_id/output_index/content_index` 区分同一轮中的多个 output item；Chat Completions 在 delta 类型切换时创建新块；Anthropic 直接保留 `content_block.index`，Gemini 使用 step index。正文、思考或工具不会跨越块身份回填；终态校准或引用补齐仅更新对应正文块，不用整轮聚合正文覆盖最后一个块。
 
-服务端网页搜索是 Responses Provider 的独立开关，默认关闭。开启后请求只增加 `web_search` 托管工具；搜索开始和结束作为独立运行事件投影到 UI，不进入 Eta 本地工具执行器。当前配置为 OpenAI-compatible Responses 且开启此开关时，模型目录只保留 Provider 托管搜索，不再公开同名的本地 `web_search` 函数；`fetch_url` 与 `browser_use` 仍按本地 `browserTools` 开关提供。托管搜索不受本地 `browserTools` 开关控制。该开关在其他协议下不会隐藏本地搜索，也不会把 Responses 的工具字段注入其他 Provider 协议。最终回答中的 `url_citation` 会去重并转换为可点击 Markdown 引用；偏移无效时降级为回答末尾的来源列表。当前不接入 file search、code interpreter、Provider 托管 MCP 或其他托管工具。
+服务端网页搜索为独立开关，默认关闭。OpenAI-compatible Responses 开启后请求增加 `web_search` 托管工具；搜索开始和结束作为独立运行事件投影到 UI，不进入 Eta 本地工具执行器。实际启用托管搜索时，模型目录不再公开本地 `web_search` 函数；`fetch_url` 与 `browser_use` 仍按本地 `browserTools` 开关提供。托管搜索不受本地 `browserTools` 开关控制。Anthropic 和 Chat Completions 不启用该开关，也不会收到 Responses 工具字段。最终回答中的 `url_citation` 会去重并转换为可点击 Markdown 引用；偏移无效时降级为回答末尾的来源列表。当前不接入 file search、code interpreter、Provider 托管 MCP 或其他托管工具。
+
+Gemini 使用原生 Interactions API 和 `x-goog-api-key`，固定 `stream:true`、`store:false`，由 Eta 发送完整输入；不使用 `previous_interaction_id` 或后台任务。各 `step.start/delta/stop` 按 index 累积，`interaction.completed` 中的 status 决定本轮结果，不能用裸 `[DONE]` 或 EOF 代替合法终态。只有 `requires_action` 的完整函数调用进入本地执行器，结果通过原始 call ID 回传。`incomplete` 和 `budget_exceeded` 明确报告输出未完成，不自动重试、不提交半成品助手历史、不执行工具；已流出的部分文字仍留在运行界面。累计 usage 按字段覆盖先前值，不逐分片累加，并在交互终态统一发布，避免早于正文到达的用量被界面丢弃。上下文用量显示服务端 `total_tokens`，自动压缩仍使用 `total_input_tokens`；缓存 token 已包含在输入中，不重复相加。自定义请求头和正文不能覆盖认证、输入、工具目录、流式字段或会话保存策略。 HTTP 400 可展示服务端提供的受控错误类型和参数字段位置；原始 message、字段描述和自定义字段名不进入错误文案，避免回显 Prompt 或凭据。
+
+Gemini 工具参数在 Provider 边界做组合分支兼容投影：`oneOf`、`anyOf`、`allOf` 分支中的 `required` 引用外层已声明属性时，为缺少局部定义的分支补齐该属性声明，保留原有必填、组合和附加属性约束。转换不修改公共工具目录，不跨嵌套对象或数组传递属性；引用与资源标识保留原位置，限制附加属性的分支不会从外层继承声明，避免改变 Schema 语义。
+
+Gemini 的完整原生 steps、思考和搜索签名只在当前 run 内回放，不进入稳定会话或运行归档。签名工具链尚未完成时保持请求前缀并延后自动压缩，强制压缩明确失败。跨 run、跨 Provider 或压缩后，旧消息与工具记录作为明确标注的文本历史投影，不把缺少签名的旧工具交换重新构造成原生调用。工具截图仍沿用完整工具批次后的单轮观察消息。思考档位来自 `GeminiModelCapabilities`；已确认强制思考的模型不能选择 Off，未知手动模型仅提供 Default，不猜测档位或工具混用能力。原生模型目录支持分页并限制累计大小，已有兼容连接不会自动改为 Gemini。
+
+Gemini Google Search 仅在用户开启、模型已确认支持、入口声明并通过 Runtime 校验可以展示建议时生效。Eta 聊天和原生助手浮窗支持该能力；小布、小爱、旧客户端和其他入口保持本地搜索。搜索与函数混用使用 `validated`，能力目前属于预览。搜索调用与结果的完整签名回放留在模型层，引用按 UTF-8 字节位置转换；搜索建议附在对应回答下方，无正文的工具轮将建议延后到下一次回答。建议通过独立只读 WebView 展示，脚本、文件访问和网络子资源关闭，用户点击 HTTP(S) 链接交给外部浏览器。
+
+搜索建议使用 `SearchSuggestionsPayload` 的单片段、每轮数量与总字节预算，超限明确失败，不截断 HTML。活动 Runtime 的内存重连可回放建议；持久化事件、checkpoint、归档、会话存储、备份和导出均排除建议 HTML。进程恢复只保留回答与引用，不能恢复原建议。`store=false` 仅控制 Interactions 保存，不承诺关闭 Google Search 自身的数据处理与留存，详见 [官方说明](https://ai.google.dev/gemini-api/terms#grounding-with-google-search)。
 
 ### 模型等待与重试
 
@@ -129,11 +171,13 @@ Root 探测在 IO 线程执行：存在 `su` 时首次自动请求一次，最�
 
 ## 网页搜索与正文读取
 
-本地 `web_search`、`fetch_url` 与 `browser_use` 共用既有 `browserTools` 权限；Responses 托管搜索启用时，本地同名搜索不再向模型公开，正文读取与浏览器仍可用。设置文案为“启用网页搜索、读取与浏览器”，持久化 key 仍是 `agent_browser_tools`，不新增搜索服务配置、凭据或 IPC 字段。关闭后目录不公开这三个本地工具，执行入口也逐次复查开关。它们无需 Root 或无障碍服务；模型请求、MCP 和 Provider 托管搜索仍走各自的配置与授权链路。
+本地 `web_search`、`fetch_url` 与 `browser_use` 共用既有 `browserTools` 权限；Responses 托管搜索启用时，本地同名搜索不再向模型公开，正文读取与浏览器仍可用。设置文案为“启用网页搜索、读取与浏览器”，持久化 key 仍是 `agent_browser_tools`；关闭后目录不公开这三个本地工具，执行入口也逐次复查开关。它们无需 Root 或无障碍服务；模型请求、MCP 和 Provider 托管搜索仍走各自的配置与授权链路。
 
-`web_search` 通过 `PublicWebSearch` 请求 DuckDuckGo 官方公开 HTML 搜索入口，不需要额外 API Key。当前只解析首屏结果，`max_results` 默认为 5、最多 10；返回目标站点的标题、原始链接和摘要，去掉搜索跳转包装并去重。结果携带 `scope=first_page`、采集时间、截断原因和跳过数量，不能把首屏结果当作完整搜索范围。验证挑战、HTTP 限流、编码失败、过大响应或无法识别的页面结构返回明确错误；只有识别到明确的无结果提示时才返回成功的空列表。公开站点可用性及页面结构会变化，工具不绕过人工验证。
+`web_search` 与 `fetch_url` 保持统一的模型工具合同，底层执行后端可在“网页搜索与读取”设置中分别选择 **内置默认**、**DeepSeek**（`POST /v1/tools/search` 与 `POST /v1/tools/fetch`）或 **自定义接口**（支持 GET/POST、请求模板与响应 JSON 路径映射）。非敏感设置保存在 `SettingsDataStore`，独立 API Key 通过 AndroidKeyStore `AES/GCM/NoPadding` 加密保存在 `eta_web_tools_secrets`；当选择 DeepSeek 且未单独填写密钥时，自动复用模型提供商中已配置的 DeepSeek API Key 与服务地址。
 
-`fetch_url` 使用匿名 HTTP GET，HTML 解析仅处理已下载文本，不执行 JavaScript，也不加载页面子资源。除 HTML/XHTML 外，还接受 `text/*`、Markdown、JSON 与 `application/*+json`；二进制或不支持的类型明确失败。字符编码按 BOM、响应头及可用的 HTML 声明判断；正文发生替换解码时标记 `decoding_lossy`，搜索结果则拒绝不可靠的解码。HTML 会移除脚本等非正文内容并提取有限链接；它不继承共享 WebView 的 Cookie 或登录状态，需要动态渲染、登录、表单或其他网页交互时使用 `browser_use`。
+`web_search` 默认通过 `PublicWebSearch` 请求 DuckDuckGo 公开 HTML 搜索入口（`scope=first_page`），也可切换至 DeepSeek Search 或自定义搜索接口（`scope=api`）。`max_results` 默认为 5、最多 10；返回目标站点的标题、原始链接和摘要（DeepSeek 后端额外附带长摘要 `summary`、站点名称、发布时间、权威度与排序分），去掉跳转包装并去重。结果携带采集时间、截断原因和跳过数量；验证挑战、鉴权或余额失败、HTTP 限流、编码失败、过大响应或无法识别的响应结构返回明确错误。
+
+`fetch_url` 支持内置本地匿名 HTTP GET、DeepSeek Fetch（返回 Markdown）或自定义读取接口；当配置为 DeepSeek 或自定义接口且远端抓取失败（非取消、非 URL 格式错误）时，自动回退到本地静态抓取并在结果中标记 `fallback_from`。本地 HTML 解析仅处理已下载文本，不执行 JavaScript，也不加载页面子资源；除 HTML/XHTML 外，还接受 `text/*`、Markdown、JSON 与 `application/*+json`。字符编码按 BOM、响应头及可用的 HTML 声明判断；正文发生替换解码时标记 `decoding_lossy`。它不继承共享 WebView 的 Cookie 或登录状态，需要动态渲染、登录、表单或其他网页交互时使用 `browser_use`。
 
 首次读取传 `url`，续页传返回的 `document_id` 与 `next_offset_chars`，两种来源必须且只能选择一个。分页读取同一份缓存正文，不重复 HTTP 请求，也不会混入网站随后更新的内容。快照只属于当前 run，最多保留 4 份文档且正文合计不超过 600000 字符，按最近访问情况淘汰；run 关闭会清空，失效或跨 run 的 ID 返回 `WEB_DOCUMENT_EXPIRED`。字符偏移须使用工具返回值，不能落在 Unicode 代理项对中间。`has_more` 表示缓存正文仍有下一页，`source_truncated` 表示下载或提取本身已丢失内容；读完所有页也不能消除来源截断。
 
@@ -186,11 +230,13 @@ Shell 子进程在校验失败或取消时可能提前关闭输入管道，执�
 
 ## 结构化设备查询与操作
 
+`get_current_context` 在操作记录中显示为“读取时间与位置”，结果保留手机返回的本地时间和 UTC 偏移。位置显示系统最近一次位置记录及其年龄；未授权、系统定位关闭或没有缓存位置时明确提示，不将缓存位置表述为实时定位，也不额外解析城市或地址。
+
 `inspect_app` 属于设备直达工具，优先通过 PackageManager 查询精确包名，不要求目标应用具有桌面入口。结果包含版本、UID、安装来源及路径、启用/停止状态与分页权限列表。查询仅针对 Eta 所属 Android 用户；`user_id` 缺失时使用该用户，指定其他用户或工作资料时返回 `USER_SCOPE_UNSUPPORTED`。缺少包可见性时不会把查询不到直接断言成未安装，安装来源不可读也会单独标记。
 
 `get_logcat` 仍属于需要 Root 的敏感读取工具。它先按 PID、tag、最低 level 与 buffer 采集最近 `scan_lines` 条记录，再在样本中按 ISO 8601 的 `since` 和字面 `query` 筛选，最多返回 `max_lines` 条及有限文本。日志作用域为设备，不能用 `user_id` 冒充用户隔离。结果的采集起止时间、`scan_limited`、`capture_truncated`、`has_more` 与 `complete_within_scan` 分别说明采集和返回范围；`has_more` 只表示样本内有未返回匹配。日志源是环形缓冲区，`history_complete` 始终为 false，无匹配不代表更早记录不存在。
 
-`get_setting` 与系统写操作统一指定或报告 `user_id`，不再把 Root 命令中的前台用户当作 Eta 所属用户；当前不提供跨资料后端。`global` 设置和 Wi-Fi/蓝牙属于设备级状态。`set_setting`、`set_device_state`、`app_state_control`、`set_volume` 返回 `before`、`after`、`expected`、`changed` 与 `verified`，命令退出 0 或 API 接受请求不再等同于目标状态生效。读回未达到目标或过渡状态尚未结束时返回 `STATE_CHANGE_UNCONFIRMED`；无法比较前后值时 `changed` 为 null。已有目标状态可以验证成功而 `changed=false`。设置原始值按敏感工具数据处理。
+`get_setting` 与系统写操作统一指定或报告 `user_id`，不再把 Root 命令中的前台用户当作 Eta 所属用户；当前不提供跨资料后端。`global` 设置和 Wi-Fi/蓝牙属于设备级状态。`set_setting`、`set_device_state`、`app_state_control`、`set_volume` 返回 `before`、`after`、`expected`、`changed` 与 `verified`，命令退出 0 或 API 接受请求不再等同于目标状态生效。读回未达到目标或过渡状态尚未结束时返回 `STATE_CHANGE_UNCONFIRMED`；无法比较前后值时 `changed` 为 null。已有目标状态可以验证成功而 `changed=false`。已验证的设备操作在记录中显示具体目标及前后状态，例如“自动旋转：关闭 → 开启”；音量、亮度和息屏时间使用读回值及对应单位，未知前值不推断为零或关闭。通用设置仅对语义明确的固定设置键展示值，其余保持不含原始值的修改摘要。
 
 ## 个人上下文与一方应用操作
 
@@ -230,13 +276,13 @@ Shell 子进程在校验失败或取消时可能提前关闭输入管道，执�
 
 | 工具 | 调用方式 | 生命周期 |
 | --- | --- | --- |
-| `terminal` | 普通调用只需 `command`，`action` 默认 `exec`；`open` 创建会话，`session_id` 复用，`close` 关闭。 | 命令和会话属于当前 Agent run。 |
+| `terminal` | 普通调用只需 `command`，`action` 默认 `exec`；`open` 创建会话，`session_id` 复用，`close` 关闭。 | 命令和会话属于当前 Agent run，单次调用结束后回收进程，不用于 `&` 挂起后台进程。 |
 | `terminal_job` | `start` 启动，`list` 查看任务，`read` 读取日志，`wait` 等待完成，`stop` 停止。 | 回复结束后继续执行；完成、失败或停止时通知用户，状态与日志可在后续 run 查询。 |
 | `terminal_daemon` | `start / list / logs / stop` 管理后台服务，使用 `task_id`。 | 可跨 run 运行，仍可能因进程退出、系统回收或重启结束。 |
 
 参数由 `AgentTerminalToolCatalog` 声明，执行器按动作读取所需字段，不另设字段白名单或 Schema 预检。使用 `session_id` 时沿用会话目录、身份和环境，重复传入的 `cwd`、`identity`、`environment` 不覆盖会话。异步任务和后台服务不复用 Shell 会话。命令不设应用侧字符上限，实际运行仍受系统进程限制、超时、输出预算和取消控制。旧 `run_command` 与旧终端动作只保留历史展示，不再作为执行入口。
 
-`TerminalExecutionContext` 在 run 创建时冻结工作目录、所选 Linux 发行版和 rootfs 路径，并由同一个对象向执行器和模型提供事实。Android 的新调用按当前已确认授权选择默认身份：Root 可用则直接用 Root，否则用 App UID；显式 `identity` 优先。已有会话和后台任务保留创建时身份，授权变化不移动文件。模型首轮等待 App 已经启动的 Root 探测，不让检测中的 Root 用户先以普通身份试错；已有有效授权时无需重复调用检测工具。后台服务的启动后端与同一份上下文绑定，不跟随运行中的 Linux 设置变更。模型能看到实际工作目录、Linux 后端、就绪状态与 `/workspace` 的宿主映射，避免把 PRoot 私有工作区和 chroot Root 工作区当成同一目录。持久目录、任务记录与已有 Linux 安装均不迁移。
+`TerminalExecutionContext` 在 run 创建时冻结工作目录、所选 Linux 发行版和 rootfs 路径，并由同一个对象向执行器和模型提供事实。Android 的新调用按当前已确认授权选择默认身份：Root 可用则直接用 Root，否则用 App UID；显式 `identity` 优先。已有会话和后台任务保留创建时身份，授权变化不移动文件。模型首轮等待 App 已经启动的 Root 探测，不让检测中的 Root 用户先以普通身份试错；已有有效授权时无需重复调用检测工具。后台服务的启动后端与同一份上下文绑定，不跟随运行中的 Linux 设置变更。模型能看到实际工作目录、Linux 后端、基础 rootfs 与常用工具包/扩展组件的就绪状态以及 `/workspace` 的宿主映射，避免把 PRoot 私有工作区和 chroot Root 工作区当成同一目录。持久目录、任务记录与已有 Linux 安装均不迁移。
 
 终端族与文件工具的 `environment` 明确区分设备控制与通用 Linux 工具，默认值为 `android`：
 
@@ -257,7 +303,11 @@ Shell 子进程在校验失败或取消时可能提前关闭输入管道，执�
 
 APK 分析在 Alpine 与 Debian 中都作为可选档案显示。JADX、Apktool、smali 与 baksmali 使用当前最新正式版的固定官方 Release URL、大小和 SHA-256，下载完整校验后才进入 App 可写的 cache staging；不能把下载或解包暂存目录放进由 Root 创建的 Linux 管理目录。GitHub 制品先尝试一个 HTTPS 下载入口，再回到官方地址，但仍只接受与官方清单 SHA-256 完全一致的字节。JADX 只解出 CLI 脚本、运行库与许可证，成功验证全部命令后再原子切换当前版本。档案在 Alpine 安装 `openjdk25-jdk`，在 Debian 安装 `openjdk-25-jdk-headless`，但不安装全局 Gradle、Android SDK 或 NDK。由于 Google 的 Linux SDK、AAPT2 与 NDK 主机工具只提供 x86_64 构建，手机 ARM64 chroot 无法原生组成受官方支持的完整 Android 编译链；`apktool build` 因而稳定拒绝，解码、代码查看和独立 Smali 汇编/反汇编不受影响。
 
+Debian 安装基础工具时会刷新 `eta-apt` 入口，旧环境初始化中断后可直接重试。入口在安装前结合 `dpkg --audit` 与 `apt-get check` 检查包状态和依赖；发现异常时先尝试完成未配置的包，必要时运行 `apt-get --fix-broken --no-remove install`，修复后重新配置并验证。恢复依据包管理器自身的状态，自动修复不会删除软件包。修复未完成或安装留下不一致状态时停止本次操作，界面提示检查或修复失败及手动诊断命令；超时和其他安装失败也不再统一归因为网络。相关语义见 Debian 的 [dpkg 手册](https://manpages.debian.org/trixie/dpkg/dpkg.1.en.html)和 [APT 手册](https://manpages.debian.org/trixie/apt/apt-get.8.en.html)。
+
 ## 后台执行生命周期
+
+App 本体的当前会话正在回复且处于聊天页时，以及 GUI 运行浮层正在执行时，通过 Android [`View.keepScreenOn`](https://developer.android.com/develop/background-work/background-tasks/awake/screen-on) 保持屏幕常亮，底层使用 `FLAG_KEEP_SCREEN_ON`。仅已有窗口可见时生效；暂停、停止、完成、失败或 Runtime 服务销毁时清除。任务结束后的结果卡片、设置页、空闲会话与纯后台任务不额外保持常亮，无需新增权限，也不修改系统亮度和息屏时间。用户主动锁屏不取消后台任务，但 GUI 操作通常仍需亮屏、解锁；后台执行不因常亮功能获得额外的 CPU 或网络保活保证。
 
 `AgentExecutionService` 使用 `specialUse` 前台类型，为当前 Agent 运行、普通终端和 PRoot 后台进程持有任务引用。用户退出页面只断开 UI；最后一个任务结束时服务释放，通知中的停止操作回收它实际持有的任务。普通后台任务保持宿主 tracer 与输出读取，不能像 Root daemon 那样脱离 App 生命周期。Root daemon 保持原有独立生命周期，普通任务清理不会批量停止 Root daemon。Root 用户的原有 Runtime 绑定链路在新增前台服务启动受限时仍可继续，不因新增服务阻断厂商助手入口。
 
@@ -280,7 +330,11 @@ App 在发起请求前已经把当前用户消息写入会话 history，因此 R
 
 完整脱敏历史 `journal`、可替换的模型上下文 `history` 和展示消息分别保存。Room 的大文本按小行分块存储，主记录仅保存分块引用；DAO 在同一事务中更新主记录与分块，读取时验证顺序与完整长度，删除所属记录时清理分块。分块大小限制单行，不限制会话总长度。数据库迁移完整搬迁现存历史，不能恢复已被旧版本丢弃的内容。
 
-App 按上次成功提交的内容比较会话变更，只更新变化的元数据、上下文字段和展示消息。追加消息保留已有记录；编辑、重排或删除时替换变化位置之后的消息，同一事务清理对应分块并更新已应用标记及会话选择。保存失败不推进比较基线，后续可以重试。流式占位等未入库消息会在排序中留下空洞，重启加载后列表下标与库内排序不一致的会话不进入基线，首次保存整段重写并重排。导入备份期间暂停会话保存，未保存的结果不回执；导入成功后按库内数据整体重载，失败时数据库已回滚，恢复保存并补写暂停期间的变更。加载逐会话读取和转换消息，避免同时保留所有会话的数据库行副本；当前工作台仍会持有已加载的会话状态。
+App 按上次成功提交的内容比较会话变更，只更新变化的元数据、上下文字段和展示消息。追加消息保留已有记录；编辑、重排或删除时替换变化位置之后的消息，同一事务清理对应分块并更新已应用标记及会话选择。保存失败不推进比较基线，后续可以重试。消息窗口保存绝对排序起点；流式占位等未入库消息留下的排序空洞，在窗口发生变更时只重排已加载后缀，不删除更早的记录。导入备份期间暂停会话保存与加载，未保存的结果不回执；导入提交前失败时数据库回滚，恢复保存并补写暂停期间的变更；提交后即以库内数据重载，后续凭据清理失败或取消不能把导入前的内存写回新库。
+
+工作台启动只读取会话摘要和当前会话的最近一页消息；旧消息在真实上翻接近列表顶部时逐页预取，页大小以 `AgentConversationStore` 为准；重排和重新测量不会自行触发连续读取。读取失败保留当前窗口并显示重试入口，切换会话会取消旧页请求。其余会话的正文、上下文和完整日志在打开或恢复对应运行时才加载。未加载状态只可更新标题，不作为空正文覆盖存储。离开会话并保存成功后，非运行中的正文及保存基线会释放；输入草稿与附件仍保留。阅读期间保留已加载的消息后缀；回到最新位置且窗口超过保留阈值时，先保存再释放旧页，仅保留最近一页，重新上翻可从数据库读回。正在运行、编辑或继续上翻时不释放当前阅读窗口。搜索在数据库中匹配未加载的消息，单会话导出仍读取完整消息。当前会话的 `history` 与 `journal` 保持完整语义，不通过截断或清空历史降低内存；单个异常巨大的上下文仍有物化开销。
+
+普通 App 聊天复用运行会话及在途检查点的事件，不额外积攒外部归档事件副本。合法外部入口继续保存可恢复归档；关闭运行浮层后释放已完成运行的续接上下文，不依赖 Service 立即销毁来回收。
 
 整体备份沿用 JSON 格式，兼容既有备份。导出在一致的数据库事务中分批读取主记录，逐条恢复分块文本并编码到临时文件；完整生成后再复制到用户选择的目标。导入先在 App 缓存中暂存记录数组，逐条校验标识、所属会话和角色关联，再在事务中恢复数据库，并保留记忆文件失败补偿。导出与导入共用大小限制，以 `EtaBackupJsonStreams` 为准；备份不再依赖整份 JSON 字符串或字节数组。临时文件在成功、失败和取消时清理，设备需要足够的临时磁盘空间。保存与备份失败日志记录操作步骤、异常类型及有界调用位置，不记录异常消息、聊天正文或凭据。
 
@@ -290,7 +344,7 @@ App 按上次成功提交的内容比较会话变更，只更新变化的元数�
 
 ### 上下文摘要
 
-模型窗口只采用设置中保存的值。从远端拉取模型时，若接口标注了窗口且该模型尚未填写，拉取会把标注值写入保存的窗口，用户可再修改；已填写的值不被覆盖，接口未标注则保持空。官方目录不参与运行窗口解析，运行时也不自动补齐缺失配置。未填写窗口时照常对话，只关闭自动压缩；手动压缩仍可用，服务商返回上下文溢出时按 `CONTEXT_OVERFLOW` 报告。记忆、世界书等按窗口比例分配的注入预算在窗口未知时以 128K 为基准。
+模型窗口只采用设置中保存的值。OpenAI 的三个初始预设将官方窗口写入配置，已有预设的空窗口在目录升级时补齐，已配置值保留；升级不新增已删除模型，也不在后续读取时恢复用户清空的窗口。Codex 同步时使用账号目录的窗口替换公共 API 的预填窗口，用户另行设置的窗口保留。从远端拉取模型时，若接口标注了窗口且该模型尚未填写，拉取会把标注值写入保存的窗口，用户可再修改；已填写的值不被覆盖，接口未标注则保持空。官方目录不参与运行窗口解析，运行时也不自动补齐缺失配置。未填写窗口时照常对话，只关闭自动压缩；手动压缩仍可用，服务商返回上下文溢出时按 `CONTEXT_OVERFLOW` 报告。记忆、世界书等按窗口比例分配的注入预算在窗口未知时以 128K 为基准。
 
 设置中的“上下文与扩展”提供“自动压缩上下文”开关，默认开启；配置保存在 App 本地，不依赖 Xposed，聊天与系统助手入口共用，从下一次运行生效。关闭后保留手动压缩。Runtime 会核对本地设置，入口请求不能重新开启已关闭的自动压缩。
 
@@ -327,6 +381,8 @@ Skill 安装工具始终向模型提供，不再根据顶层用户输入的固�
 待确认结果和外部入口归档会把完整脱敏 transcript 一并写入 Room。显式迁移为旧记录补默认字段并搬迁大文本；分块读写集中在 DAO，协议投影集中在 Runtime，Provider 不负责持久化。恢复幂等性依据已应用 run 标记，不能靠比较 history 尾部文本猜测。旧结果缺少 transcript 时仍可用已有 assistant 内容合成兼容历史。
 
 主界面的 `AgentAppState` 由 Activity 级 ViewModel 持有，配置变更只重建 Compose UI，不替换正在等待 Runtime 的客户端。用户消息先提交到 Room，再启动可能产生设备副作用的 run。Runtime 为 App 会话维护追加式在途 checkpoint：文本增量有界合并，结构化边界先落盘再发布；块结束通常只保存边界和字符数，仅在终态修正流式内容时保存替换正文。工具调用的原始参数增量和原始结果不进入 UI 事件日志，UI 已展示的参数摘要、脱敏终端命令与结果摘要会随工具状态保存；完整普通工具交换另存于脱敏 transcript。终态先封存 checkpoint 再提交 outbox，只有会话成功落盘并 ACK 结果后才同时删除 outbox 与 checkpoint。
+
+设备、文件和一方应用的专用结果摘要按工具语义展示已验证的状态变化、已完成的动作或本次返回数量。闹钟和计时器的 Intent 派发仅显示请求已提交；日历更新只列改动字段类别，便签回收不表述为永久删除。文件摘要显示读写规模、替换次数或匹配数量，并保留分页与扫描范围限制；技能安装显示下一轮可用。这些专用摘要不包含文件正文、路径、日历和便签内容、网络名称或任意设置原始值，未知字段不推断为零或关闭。既有历史记录保留原摘要，不重新执行工具或补造变更详情。
 
 App 恢复时以 `checkpoint + outbox + active session` 统一对账，不再用进程是否变化推断 run 状态。有 outbox 时先恢复工具轨迹，再用终态结果定稿；Runtime 仍 active 时，新 UI 会先整体恢复内存中的安全事件，再订阅实时事件与最终结果；只有既无终态又不 active 的 run 才标记为中断。恢复不会自动重放任何工具，也不会把半截助手回复加入后续模型 history。
 

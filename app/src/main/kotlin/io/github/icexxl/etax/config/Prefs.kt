@@ -46,6 +46,7 @@ internal object Prefs {
         const val AGENT_AUTO_COMPACTION_ENABLED = "agent_auto_compaction_enabled"
         /** 对话页的缓慢流动背景（纯视觉效果，默认开启）。 */
         const val CHAT_AURORA_BACKGROUND = "chat_aurora_background"
+        const val AGENT_SUBAGENT_ENABLED = "agent_subagent_enabled"
         const val AGENT_RUNTIME_CONFIG_JSON = "agent_runtime_config_json"
 
         /** 全部布尔开关及其默认值。 */
@@ -67,6 +68,7 @@ internal object Prefs {
             AGENT_THINKING_ENABLED to true,
             AGENT_AUTO_COMPACTION_ENABLED to true,
             CHAT_AURORA_BACKGROUND to true,
+            AGENT_SUBAGENT_ENABLED to true,
         )
 
         /** 由 Eta Runtime 最终裁决、不要求 Xposed 框架在线的开关。 */
@@ -79,6 +81,7 @@ internal object Prefs {
             AGENT_THINKING_ENABLED,
             AGENT_AUTO_COMPACTION_ENABLED,
             CHAT_AURORA_BACKGROUND,
+            AGENT_SUBAGENT_ENABLED,
         )
     }
 

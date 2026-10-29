@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import io.github.icexxl.etax.agent.model.AgentModelClient
 import io.github.icexxl.etax.config.Prefs
 import io.github.icexxl.etax.data.datastore.SettingsDataStore
+import io.github.icexxl.etax.data.model.GeminiProviderSetting
 import io.github.icexxl.etax.data.model.AnthropicProviderSetting
 import io.github.icexxl.etax.data.model.CustomProviderSetting
 import io.github.icexxl.etax.data.model.Model
@@ -11,12 +12,15 @@ import io.github.icexxl.etax.data.model.ModelReasoningCapabilities
 import io.github.icexxl.etax.data.model.OpenAiCompatibleProviderSetting
 import io.github.icexxl.etax.data.model.OpenAiEndpointMode
 import io.github.icexxl.etax.data.model.ProviderSetting
+import io.github.icexxl.etax.data.model.ProviderAuthModes
 import io.github.icexxl.etax.data.model.ReasoningEffort
+import io.github.icexxl.etax.data.model.SubagentSettings
 import io.github.icexxl.etax.data.model.enabledModel
 import io.github.icexxl.etax.data.model.runtimeProviderType
 import io.github.icexxl.etax.data.model.selectedOrFirstModel
-import io.github.icexxl.etax.data.provider.BuiltinProviders
+import io.github.icexxl.etax.data.provider.GeminiModelCapabilities
 import io.github.icexxl.etax.data.provider.ProviderSourceRegistry
+import io.github.icexxl.etax.data.provider.ProviderConnectionProfile
 import io.github.icexxl.etax.data.provider.ReasoningCapabilityResolver
 import io.github.libxposed.service.XposedService
 import kotlinx.serialization.encodeToString
@@ -31,6 +35,59 @@ internal object RuntimeConfigRepository {
     fun selectedProviderIdFlow() = SettingsDataStore.selectedProviderIdFlow()
 
     fun selectedModelIdFlow() = SettingsDataStore.selectedModelIdFlow()
+
+    fun subagentSettingsFlow() = SettingsDataStore.subagentSettingsFlow()
+
+    suspend fun setSubagentSettings(settings: SubagentSettings) {
+        SettingsDataStore.setSubagentSettings(settings)
+    }
+
+    /**
+     * 解析 Subagent 实际运行所用的模型配置。
+     *
+     * 指定了独立子模型且该模型仍处于启用状态时优先使用子模型，否则平滑回退到主模型；
+     * 工具开关继承父请求，并强制关闭 `subagentTools` 防止递归派发。
+     */
+    suspend fun subagentRuntimeConfig(
+        primaryConfig: AgentModelClient.ModelConfig,
+    ): AgentModelClient.ModelConfig {
+        val settings = SettingsDataStore.subagentSettings()
+        val secondaryModelId = settings.modelId?.takeIf { it.isNotBlank() }
+        val resolvedSecondary = if (secondaryModelId != null) {
+            ProviderRepository.ensureBuiltInsMerged()
+            ProviderRepository.allProviders().enabledModel(secondaryModelId)
+        } else {
+            null
+        }
+        val base = resolvedSecondary?.let { (provider, model) ->
+            buildRuntimeConfig(provider, model)
+        } ?: primaryConfig
+        val explicitEffort = settings.resolvedReasoningEffort
+        val effort = when {
+            explicitEffort != null -> {
+                val capabilities = base.reasoningCapabilities
+                when {
+                    capabilities != null -> capabilities.normalize(explicitEffort)
+                    explicitEffort == ReasoningEffort.OFF -> ReasoningEffort.OFF
+                    else -> base.effectiveReasoningEffort
+                }
+            }
+            resolvedSecondary != null -> base.effectiveReasoningEffort
+            else -> primaryConfig.effectiveReasoningEffort
+        }
+        return base.copy(
+            terminalTools = primaryConfig.terminalTools,
+            browserTools = primaryConfig.browserTools,
+            deviceDirectTools = primaryConfig.deviceDirectTools,
+            deviceSensitiveReadTools = primaryConfig.deviceSensitiveReadTools,
+            deviceSensitiveActionTools = primaryConfig.deviceSensitiveActionTools,
+            subagentTools = false,
+            thinkingEnabled = effort.enablesReasoning,
+            reasoningEffort = effort,
+            autoCompactionEnabled = primaryConfig.autoCompactionEnabled,
+            supportsSearchSuggestions = false,
+        )
+    }
 
     suspend fun selectedProvider(): ProviderSetting? {
         val settings = ProviderRepository.repairSelection()
@@ -84,6 +141,18 @@ internal object RuntimeConfigRepository {
         return currentRuntimeConfig()
     }
 
+    suspend fun oauthRuntimeConfigFor(
+        providerId: String,
+        authMode: String,
+        modelName: String,
+    ): AgentModelClient.ModelConfig? {
+        if (!ProviderAuthModes.isOAuth(authMode)) return null
+        val provider = ProviderRepository.providerById(providerId)
+            ?.takeIf { it.isEnabled && it.authMode == authMode } ?: return null
+        val model = provider.models.firstOrNull { it.isEnabled && it.modelId == modelName } ?: return null
+        return buildRuntimeConfig(provider, model)
+    }
+
     suspend fun syncToRemotePreferences(service: XposedService?): Boolean {
         val prefs = Prefs.remotePreferencesForUi(service) ?: return false
         val config = currentRuntimeConfig() ?: return clearRuntimeConfig(prefs)
@@ -97,27 +166,27 @@ internal object RuntimeConfigRepository {
     }
 
     fun runtimeConfigJson(config: AgentModelClient.ModelConfig): String =
-        json.encodeToString(config)
+        json.encodeToString(if (config.authMode == ProviderAuthModes.API_KEY) config else config.copy(apiKey = ""))
 
     fun buildRuntimeConfig(provider: ProviderSetting, model: Model): AgentModelClient.ModelConfig {
-        val systemPrompt = provider.systemPrompt
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: BuiltinProviders.DEFAULT_SYSTEM_PROMPT
+        val systemPrompt = provider.systemPrompt.orEmpty().trim()
         val sourceType = ProviderSourceRegistry.resolve(provider)
-        val endpointMode = provider.endpointMode()
+        val profile = ProviderConnectionProfile.forAuthMode(provider.authMode)
+        val endpointMode = profile?.endpointMode ?: provider.endpointMode()
         val reasoningCapabilities = reasoningCapabilities(provider, model)
         return AgentModelClient.ModelConfig(
             providerId = provider.id,
             providerName = provider.name,
-            providerType = provider.runtimeProviderType,
+            providerType = profile?.providerType ?: provider.runtimeProviderType,
             providerSourceType = sourceType,
-            baseUrl = provider.baseUrl.trim(),
-            apiKey = provider.apiKey.trim(),
+            baseUrl = profile?.baseUrl ?: provider.baseUrl.trim(),
+            apiKey = provider.apiKey.trim().takeIf { provider.authMode == ProviderAuthModes.API_KEY }.orEmpty(),
+            authMode = provider.authMode,
             model = model.modelId.trim(),
             modelDisplayName = model.displayName.trim(),
             contextWindow = model.effectiveContextWindow,
             autoCompactionEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
+            subagentTools = Prefs.isEnabled(Prefs.Keys.AGENT_SUBAGENT_ENABLED),
             systemPrompt = systemPrompt,
             anthropicVersion = (provider as? AnthropicProviderSetting)?.anthropicVersion
                 ?: AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION,
@@ -133,6 +202,9 @@ internal object RuntimeConfigRepository {
     }
 
     fun reasoningCapabilities(provider: ProviderSetting, model: Model): ModelReasoningCapabilities? {
+        if (provider is GeminiProviderSetting) {
+            return GeminiModelCapabilities.requestReasoningCapabilities(model.modelId)
+        }
         val sourceType = ProviderSourceRegistry.resolve(provider)
         val inferOpenAiCatalog = sourceType == io.github.icexxl.etax.data.model.ProviderSourceTypes.CUSTOM &&
             provider.endpointMode() == OpenAiEndpointMode.RESPONSES
@@ -150,7 +222,7 @@ internal object RuntimeConfigRepository {
     private fun ProviderSetting.endpointMode(): String = when (this) {
         is OpenAiCompatibleProviderSetting -> endpointMode
         is CustomProviderSetting -> endpointMode
-        is AnthropicProviderSetting -> ""
+        is AnthropicProviderSetting, is GeminiProviderSetting -> ""
     }
 
     private fun writeRuntimeConfig(

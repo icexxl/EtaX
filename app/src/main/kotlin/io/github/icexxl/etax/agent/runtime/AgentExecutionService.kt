@@ -103,24 +103,22 @@ internal class AgentExecutionService : Service() {
             this, 1, Intent(this, AgentExecutionService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val taskCount = leases.count()
+        val taskCount = if (activeRunCount > 0) activeRunCount else leases.count()
         val builder = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(getString(R.string.execution_title))
-            .setContentText(
-                status?.localizedText(resources)
-                    ?: resources.getQuantityString(R.plurals.execution_summary, taskCount, taskCount)
-            )
+            .setContentText(executionText(this, status, taskCount))
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
         // 只有 Agent run 在跑时才申请提升为 Live Update；终端会话、Linux 启动等长驻任务不属于"正在进行、需要持续关注"的活动。
-        if (status != null && Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1) {
+        if (status != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
             builder
                 .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
                 .setShortCriticalText(status.shortText())
-                .setRequestPromotedOngoing(true)
+            // 请求方法从 API 36.1 才公开；标准 extra 也可供支持该协议的 API 36 系统读取。
+            builder.extras.putBoolean("android.requestPromotedOngoing", true)
         }
         return builder.build()
     }
@@ -143,19 +141,31 @@ internal class AgentExecutionService : Service() {
         private val mainHandler = Handler(Looper.getMainLooper())
         @Volatile private var instance: AgentExecutionService? = null
         private var runStatus: AgentOverlayStatus? = null
+        private var activeRunCount = 0
         private var publishedStatusText: String? = null
 
         /**
          * Agent run 的当前状态，供通知与状态栏胶囊展示；null 表示没有 Agent run 在跑。
          * 只在显示文字变化时刷新通知，避免流式事件把通知更新频率推到系统限流。
          */
-        fun updateRunStatus(context: Context, status: AgentOverlayStatus?) {
+        fun updateRunStatus(context: Context, status: AgentOverlayStatus?, activeRunCount: Int) {
             mainHandler.post {
                 runStatus = status
-                val text = status?.localizedText(context.resources)
+                this.activeRunCount = activeRunCount
+                val count = if (activeRunCount > 0) activeRunCount else leases.count()
+                val text = executionText(context, status, count)
                 if (text == publishedStatusText) return@post
                 publishedStatusText = text
                 instance?.takeIf { it.foregroundActive }?.refreshNotification()
+            }
+        }
+
+        private fun executionText(context: Context, status: AgentOverlayStatus?, taskCount: Int): String {
+            val summary = context.resources.getQuantityString(R.plurals.execution_summary, taskCount, taskCount)
+            return when {
+                status == null -> summary
+                taskCount <= 1 -> status.localizedText(context.resources)
+                else -> "$summary · ${status.localizedText(context.resources)}"
             }
         }
 

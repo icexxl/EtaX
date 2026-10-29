@@ -47,11 +47,11 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -68,6 +68,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -94,6 +95,10 @@ import io.github.icexxl.etax.ui.model.UserMessageUi
 import io.github.icexxl.etax.ui.model.latestContextUsage
 import io.github.icexxl.etax.ui.voice.SpeechAutoReadAloud
 import io.github.icexxl.etax.ui.voice.SpeechPlaybackHost
+import io.github.icexxl.etax.agent.browser.BrowserSessionSnapshot
+import io.github.icexxl.etax.ui.markdown.StreamingMarkdownStateCache
+import io.github.icexxl.etax.ui.model.ConversationHistoryLoadState
+import io.github.icexxl.etax.ui.model.QueuedMessageUi
 import kotlin.math.exp
 import kotlin.math.min
 import kotlinx.coroutines.CancellationException
@@ -139,12 +144,18 @@ internal fun AgentChatBody(
     availableReasoningEfforts: List<ReasoningEffort>,
     pendingImages: List<PendingImageUi>,
     pendingFileReferences: List<PendingFileReferenceUi>,
+    queuedMessages: List<QueuedMessageUi> = emptyList(),
+    inputSyncVersion: Int = 0,
     messageEdit: MessageEditUiState?,
     onReasoningEffortChange: (ReasoningEffort) -> Unit,
     onCompactContext: () -> Unit,
     canCompactContext: Boolean,
     onModelSelected: (String) -> Unit,
     onSubmit: (String) -> Unit,
+    onInterruptAndSubmit: (String) -> Unit = onSubmit,
+    onSteerQueuedMessage: (String) -> Unit = {},
+    onRecallQueuedMessage: (String, String) -> Unit = { _, _ -> },
+    onRemoveQueuedMessage: (String) -> Unit = {},
     onStop: () -> Unit,
     onAttachImage: (String) -> Unit,
     onRemoveImage: (String) -> Unit,
@@ -160,15 +171,21 @@ internal fun AgentChatBody(
     onSuggestionClick: (String) -> Unit,
     onRunTraceClick: () -> Unit,
     onOpenBrowser: () -> Unit,
+    hasEarlierMessages: Boolean = false,
+    messageStartIndex: Int = 0,
+    historyLoadState: ConversationHistoryLoadState = ConversationHistoryLoadState.Idle,
+    onLoadEarlierMessages: () -> Unit = {},
+    onHistoryViewportChanged: (Boolean) -> Unit = {},
     isDrawerOpen: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val scrollState = rememberLazyListState()
+    val scrollState = rememberLazyListState(initialFirstVisibleItemIndex = messages.size + if (hasEarlierMessages) 1 else 0)
     val keyboard = LocalSoftwareKeyboardController.current
     val density = LocalDensity.current
     val imeBottomPx = WindowInsets.ime.getBottom(density)
     val isKeyboardVisible = imeBottomPx > 0
-    val browserSnapshot by AgentBrowserSession.snapshots.collectAsState()
+    val browserSnapshot = LocalAgentBrowserSession.current?.snapshots?.collectAsState()?.value
+        ?: BrowserSessionSnapshot()
     val contextUsage = remember(messages, modelPickerState.selectedModel) {
         latestContextUsage(messages, modelPickerState.selectedModel)
     }
@@ -201,7 +218,7 @@ internal fun AgentChatBody(
         }
     }
     var sentFromKeyboard by remember { mutableStateOf(false) }
-    var keepBottomAnchored by remember { mutableStateOf(true) }
+    var keepBottomAnchored by rememberSaveable { mutableStateOf(true) }
 
     LaunchedEffect(isStreaming) {
         if (isStreaming && sentFromKeyboard) {
@@ -220,7 +237,7 @@ internal fun AgentChatBody(
         SpeechAutoReadAloud(messages = messages, isStreaming = isStreaming)
         AgentChatScaffold(
             visibleMessages = visibleMessages,
-            hasMessages = visibleMessages.isNotEmpty(),
+            hasMessages = visibleMessages.isNotEmpty() || hasEarlierMessages,
             scrollState = scrollState,
             input = input,
             modelPickerState = modelPickerState,
@@ -231,6 +248,8 @@ internal fun AgentChatBody(
             availableReasoningEfforts = availableReasoningEfforts,
             pendingImages = pendingImages,
             pendingFileReferences = pendingFileReferences,
+            queuedMessages = queuedMessages,
+            inputSyncVersion = inputSyncVersion,
             messageEdit = messageEdit,
             showEmptySuggestions = !isKeyboardVisible,
             keepBottomAnchored = keepBottomAnchored,
@@ -242,6 +261,17 @@ internal fun AgentChatBody(
                 keepBottomAnchored = true
                 onSubmit(text)
             },
+            onInterruptAndSubmit = { text ->
+                sentFromKeyboard = true
+                keepBottomAnchored = true
+                onInterruptAndSubmit(text)
+            },
+            onSteerQueuedMessage = { id ->
+                keepBottomAnchored = true
+                onSteerQueuedMessage(id)
+            },
+            onRecallQueuedMessage = onRecallQueuedMessage,
+            onRemoveQueuedMessage = onRemoveQueuedMessage,
             onReasoningEffortChange = onReasoningEffortChange,
             onCompactContext = onCompactContext,
             canCompactContext = canCompactContext,
@@ -262,6 +292,11 @@ internal fun AgentChatBody(
             onRunTraceClick = onRunTraceClick,
             onOpenBrowser = onOpenBrowser,
             currentBrowserMessageId = currentBrowserMessageId,
+            hasEarlierMessages = hasEarlierMessages,
+            messageStartIndex = messageStartIndex,
+            historyLoadState = historyLoadState,
+            onLoadEarlierMessages = onLoadEarlierMessages,
+            onHistoryViewportChanged = onHistoryViewportChanged,
             modifier = modifier,
         )
     }
@@ -282,11 +317,17 @@ private fun AgentChatScaffold(
     availableReasoningEfforts: List<ReasoningEffort>,
     pendingImages: List<PendingImageUi>,
     pendingFileReferences: List<PendingFileReferenceUi>,
+    queuedMessages: List<QueuedMessageUi>,
+    inputSyncVersion: Int,
     messageEdit: MessageEditUiState?,
     showEmptySuggestions: Boolean,
     keepBottomAnchored: Boolean,
     onBottomAnchorChanged: (Boolean) -> Unit,
     onSubmit: (String) -> Unit,
+    onInterruptAndSubmit: (String) -> Unit,
+    onSteerQueuedMessage: (String) -> Unit,
+    onRecallQueuedMessage: (String, String) -> Unit,
+    onRemoveQueuedMessage: (String) -> Unit,
     onReasoningEffortChange: (ReasoningEffort) -> Unit,
     onCompactContext: () -> Unit,
     canCompactContext: Boolean,
@@ -307,6 +348,11 @@ private fun AgentChatScaffold(
     onRunTraceClick: () -> Unit,
     onOpenBrowser: () -> Unit,
     currentBrowserMessageId: String?,
+    hasEarlierMessages: Boolean,
+    messageStartIndex: Int,
+    historyLoadState: ConversationHistoryLoadState,
+    onLoadEarlierMessages: () -> Unit,
+    onHistoryViewportChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val surfaceColor = MiuixTheme.colorScheme.surface
@@ -339,8 +385,14 @@ private fun AgentChatScaffold(
                 availableReasoningEfforts = availableReasoningEfforts,
                 pendingImages = pendingImages,
                 pendingFileReferences = pendingFileReferences,
+                queuedMessages = queuedMessages,
+                inputSyncVersion = inputSyncVersion,
                 messageEdit = messageEdit,
                 onSubmit = onSubmit,
+                onInterruptAndSubmit = onInterruptAndSubmit,
+                onSteerQueuedMessage = onSteerQueuedMessage,
+                onRecallQueuedMessage = onRecallQueuedMessage,
+                onRemoveQueuedMessage = onRemoveQueuedMessage,
                 onReasoningEffortChange = onReasoningEffortChange,
                 onCompactContext = onCompactContext,
                 canCompactContext = canCompactContext,
@@ -385,6 +437,11 @@ private fun AgentChatScaffold(
                 messageActionsEnabled = !isStreaming && messageEdit == null,
                 editTargetMessageId = messageEdit?.targetMessageId,
                 currentBrowserMessageId = currentBrowserMessageId,
+                hasEarlierMessages = hasEarlierMessages,
+                messageStartIndex = messageStartIndex,
+                historyLoadState = historyLoadState,
+                onLoadEarlierMessages = onLoadEarlierMessages,
+                onHistoryViewportChanged = onHistoryViewportChanged,
                 modifier = Modifier
                     .fillMaxSize()
                     .then(if (frostEnabled) Modifier.layerBackdrop(messageBackdrop) else Modifier),
@@ -414,6 +471,11 @@ internal fun AgentConversationMessages(
     messageActionsEnabled: Boolean = false,
     editTargetMessageId: String? = null,
     currentBrowserMessageId: String? = null,
+    hasEarlierMessages: Boolean = false,
+    messageStartIndex: Int = 0,
+    historyLoadState: ConversationHistoryLoadState = ConversationHistoryLoadState.Idle,
+    onLoadEarlierMessages: () -> Unit = {},
+    onHistoryViewportChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // 上一版条目只作复用比对，不参与组合观察。
@@ -434,12 +496,28 @@ internal fun AgentConversationMessages(
     }
     // 流式消息的渲染会话按 id 提升到列表层持有：item 滚出视口被 LazyColumn 销毁后，
     // 滑回时复用同一解析会话与打字机进度，避免整段内容重新解析并重放显现动画。
-    val streamingMarkdownStates = remember { mutableStateMapOf<String, StreamingMarkdownState>() }
-    val bottomItemIndex = timelineEntries.size
-
+    val streamingMarkdownCache = remember { StreamingMarkdownStateCache() }
+    val streamingMarkdownStates = streamingMarkdownCache.states
+    val streamingMessageIds = remember(visibleMessages) {
+        visibleMessages.mapNotNullTo(mutableSetOf()) { message ->
+            when (message) {
+                is AgentMessageUi -> message.id.takeIf { message.isStreaming }
+                is ThinkingMessageUi -> message.id.takeIf { message.isStreaming }
+                else -> null
+            }
+        }
+    }
+    LaunchedEffect(streamingMarkdownCache, streamingMessageIds) {
+        snapshotFlow { streamingMarkdownCache.unusedMessageIds(streamingMessageIds) }
+            .collect { unused ->
+                if (unused.isNotEmpty()) streamingMarkdownCache.discardUnused(streamingMessageIds)
+            }
+    }
+    val earlierMessagesItemCount = if (hasEarlierMessages) 1 else 0
+    val bottomItemIndex = timelineEntries.size + earlierMessagesItemCount
     // 切换到某个会话时列表是新建的，首帧停在最旧的消息；等布局稳定后直接落到最新一条。
     var initialBottomApplied by remember { mutableStateOf(false) }
-    LaunchedEffect(timelineEntries.size, initialBottomApplied) {
+    LaunchedEffect(initialBottomApplied, timelineEntries.size) {
         if (initialBottomApplied || timelineEntries.isEmpty()) return@LaunchedEffect
         withFrameNanos { }
         runCatching { scrollState.scrollToItem(bottomItemIndex) }
@@ -450,14 +528,21 @@ internal fun AgentConversationMessages(
     val isAtBottom by remember(scrollState) {
         derivedStateOf { !scrollState.canScrollForward }
     }
+    val isListMeasured by remember(scrollState) {
+        derivedStateOf {
+            scrollState.layoutInfo.let { it.totalItemsCount > 0 && it.viewportEndOffset > it.viewportStartOffset }
+        }
+    }
     val densityScale = LocalDensity.current.density
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(
+        isListMeasured,
         isUserDragging,
         isAtBottom,
         keepBottomAnchored,
     ) {
+        if (!isListMeasured) return@LaunchedEffect
         val next = resolveKeepBottomAnchored(
             current = keepBottomAnchored,
             isUserDragging = isUserDragging,
@@ -495,6 +580,21 @@ internal fun AgentConversationMessages(
             isBottomSettling = false
         }
     }
+
+    val historyPaging = rememberChatHistoryPaging(
+        scrollState = scrollState,
+        entries = timelineEntries,
+        messageStartIndex = messageStartIndex,
+        messageCount = visibleMessages.size,
+        hasEarlier = hasEarlierMessages,
+        loadState = historyLoadState,
+        enabled = !isStreaming && editTargetMessageId == null,
+        canReleasePages = !isTailRendering && !isBottomSettling,
+        keepBottomAnchored = keepBottomAnchored,
+        onBottomAnchorChanged = onBottomAnchorChanged,
+        onLoadEarlier = onLoadEarlierMessages,
+        onViewportChanged = onHistoryViewportChanged,
+    )
 
     val shouldFollowBottom by rememberUpdatedState(
         resolveBottomFollowEnabled(
@@ -638,6 +738,7 @@ internal fun AgentConversationMessages(
             modifier = Modifier
                 .fillMaxSize()
                 .scrollEndHaptic()
+                .nestedScroll(historyPaging.scrollConnection)
                 .overScrollVertical(),
             contentPadding = PaddingValues(
                 top = 16.dp,
@@ -645,6 +746,15 @@ internal fun AgentConversationMessages(
             ),
             overscrollEffect = null,
         ) {
+            if (hasEarlierMessages) {
+                item(key = ChatHistoryBoundaryKey) {
+                    AgentHistoryLoadStatus(
+                        state = historyLoadState,
+                        enabled = !isStreaming && editTargetMessageId == null,
+                        onRetry = historyPaging.retry,
+                    )
+                }
+            }
             items(
                 items = timelineEntries,
                 key = { it.key },
@@ -666,9 +776,7 @@ internal fun AgentConversationMessages(
                             retainedStreamingState = (message as? AgentMessageUi)
                                 ?.takeIf { it.isStreaming || streamingMarkdownStates.containsKey(it.id) }
                                 ?.let { agentMessage ->
-                                    streamingMarkdownStates.getOrPut(agentMessage.id) {
-                                        StreamingMarkdownState()
-                                    }
+                                    streamingMarkdownCache.getOrCreate(agentMessage.id)
                                 },
                             onSuggestionClick = onSuggestionClick,
                             onRunTraceClick = onRunTraceClick,
@@ -693,9 +801,7 @@ internal fun AgentConversationMessages(
                     is AgentTimelineEntry.WorkProcess -> {
                         entry.messages.forEach { message ->
                             if (message is ThinkingMessageUi && message.isStreaming) {
-                                streamingMarkdownStates.getOrPut(message.id) {
-                                    StreamingMarkdownState()
-                                }
+                                streamingMarkdownCache.getOrCreate(message.id)
                             }
                         }
                         AgentWorkProcess(
@@ -828,15 +934,20 @@ internal sealed interface AgentTimelineEntry {
 internal fun List<AgentChatMessageUi>.toTimelineEntries(
     previous: List<AgentTimelineEntry> = emptyList(),
 ): List<AgentTimelineEntry> = buildList {
-    val previousWork = previous.asSequence()
+    val previousWorkByMessageId = previous.asSequence()
         .filterIsInstance<AgentTimelineEntry.WorkProcess>()
-        .associateBy { it.key }
+        .flatMap { entry -> entry.messages.asSequence().map { it.id to entry } }
+        .toMap()
     val workMessages = mutableListOf<AgentChatMessageUi>()
 
     fun flushWorkProcess() {
         if (workMessages.isEmpty()) return
-        val key = "work-${workMessages.first().id}"
-        val reusable = previousWork[key]?.takeIf { entry ->
+        // 历史页可能从同一工作过程的中间开始；前插补齐后保留已显示分组的身份和滚动锚点。
+        val messageIds = workMessages.mapTo(HashSet()) { it.id }
+        val previousEntry = workMessages.firstNotNullOfOrNull { previousWorkByMessageId[it.id] }
+            ?.takeIf { entry -> entry.messages.all { it.id in messageIds } }
+        val key = previousEntry?.key ?: "work-${workMessages.first().id}"
+        val reusable = previousEntry?.takeIf { entry ->
             entry.messages.size == workMessages.size &&
                 entry.messages.indices.all { index -> entry.messages[index] === workMessages[index] }
         }
@@ -903,8 +1014,14 @@ private fun AgentChatBottomBar(
     availableReasoningEfforts: List<ReasoningEffort>,
     pendingImages: List<PendingImageUi>,
     pendingFileReferences: List<PendingFileReferenceUi>,
+    queuedMessages: List<QueuedMessageUi>,
+    inputSyncVersion: Int,
     messageEdit: MessageEditUiState?,
     onSubmit: (String) -> Unit,
+    onInterruptAndSubmit: (String) -> Unit,
+    onSteerQueuedMessage: (String) -> Unit,
+    onRecallQueuedMessage: (String, String) -> Unit,
+    onRemoveQueuedMessage: (String) -> Unit,
     onReasoningEffortChange: (ReasoningEffort) -> Unit,
     onCompactContext: () -> Unit,
     canCompactContext: Boolean,
@@ -987,10 +1104,16 @@ private fun AgentChatBottomBar(
                 availableReasoningEfforts = availableReasoningEfforts,
                 pendingImages = pendingImages,
                 pendingFileReferences = pendingFileReferences,
+                queuedMessages = queuedMessages,
+                inputSyncVersion = inputSyncVersion,
                 isEditingMessage = messageEdit != null,
                 editHasLaterTurns = messageEdit?.hasLaterTurns == true,
                 preserveFollowingMessages = messageEdit?.preserveFollowingMessages == true,
                 onSubmit = onSubmit,
+                onInterruptAndSubmit = onInterruptAndSubmit,
+                onSteerQueuedMessage = onSteerQueuedMessage,
+                onRecallQueuedMessage = onRecallQueuedMessage,
+                onRemoveQueuedMessage = onRemoveQueuedMessage,
                 onReasoningEffortChange = onReasoningEffortChange,
                 onCompactContext = onCompactContext,
                 canCompactContext = canCompactContext,
@@ -1011,7 +1134,6 @@ private fun AgentChatBottomBar(
 
 private val ChatBottomFrostHeight = 24.dp
 
-private const val ChatBottomSentinelKey = "agent-chat-bottom-sentinel"
 private const val BOTTOM_FOLLOW_RESPONSE_SECONDS = 0.085f
 private const val BOTTOM_FOLLOW_MAX_FRAME_SECONDS = 0.05f
 private const val BOTTOM_FOLLOW_MAX_SPEED_DP_PER_SECOND = 720f

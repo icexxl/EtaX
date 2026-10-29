@@ -2,6 +2,7 @@ package io.github.icexxl.etax
 
 import io.github.icexxl.etax.agent.voice.SpeechOssUpload
 import android.app.Application
+import android.content.ComponentCallbacks2
 import android.os.Handler
 import android.os.Looper
 import io.github.icexxl.etax.agent.skill.SkillRuntime
@@ -17,6 +18,7 @@ import io.github.icexxl.etax.data.repository.McpServerRepository
 import io.github.icexxl.etax.data.repository.LinuxEnvironmentSettingsRepository
 import io.github.icexxl.etax.data.repository.ProviderRepository
 import io.github.icexxl.etax.ui.app.PredictiveBackController
+import io.github.icexxl.etax.agent.browser.BrowserSessionRegistry
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
 import java.util.concurrent.CopyOnWriteArraySet
@@ -79,6 +81,20 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
                 )
             }
         }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+            level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL ||
+            level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) {
+            BrowserSessionRegistry.releaseIdlePages()
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        BrowserSessionRegistry.releaseIdlePages()
     }
 
     override fun onServiceBind(service: XposedService) {

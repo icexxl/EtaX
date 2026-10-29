@@ -39,8 +39,13 @@ android {
         minSdk = 33
         targetSdk = 37
         // versionCode 规则：yyyyMMdd + 两位当日序号（01 起），发版时随 versionName 一起手动递增。
-        versionCode = 10000
-        versionName = "1.0"
+        versionCode = 10001
+        versionName = "1.1"
+
+        ndk {
+            // 同时过滤本地与依赖 AAR 的原生库，确保 APK 仅包含 ARM64。
+            abiFilters += "arm64-v8a"
+        }
     }
 
     signingConfigs {
@@ -80,7 +85,7 @@ android {
     }
 
     buildFeatures {
-        buildConfig = false
+        buildConfig = true
         compose = true
     }
 
@@ -89,6 +94,9 @@ android {
     }
 
     packaging {
+        dex {
+            useLegacyPackaging = true
+        }
         jniLibs {
             useLegacyPackaging = true
             keepDebugSymbols += setOf("**/libproot_exec.so", "**/libproot_loader.so", "**/libeta_pty.so")
@@ -171,6 +179,7 @@ dependencies {
 
     // OkHttp：替代 HttpURLConnection，支持 SSE
     implementation(libs.okhttp)
+    implementation(libs.nimbus.jose.jwt)
     implementation(libs.okhttp.sse)
 
     // Kotlinx Serialization：Provider 设置与运行时配置 JSON

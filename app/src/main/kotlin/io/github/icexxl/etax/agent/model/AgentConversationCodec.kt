@@ -1,7 +1,10 @@
 package io.github.icexxl.etax.agent.model
 
+import java.io.InputStream
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromStream
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -29,6 +32,10 @@ internal object AgentConversationCodec {
         } else {
             json.decodeFromString<List<AgentModelClient.ConversationMessage>>(raw)
         }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    fun decodeTranscript(input: InputStream): List<AgentModelClient.ConversationMessage> =
+        json.decodeFromStream(input)
 
     fun toJsonObject(message: AgentModelClient.ConversationMessage): JSONObject =
         JSONObject()
@@ -135,6 +142,7 @@ internal object AgentConversationCodec {
                 }
                 ResponsesEphemeralState.copyOutputItems(source, message)
                 AnthropicEphemeralState.copyContentBlocks(source, message)
+                GeminiEphemeralState.copyAssistantState(source, message)
             }
 
     fun toolResultMessage(

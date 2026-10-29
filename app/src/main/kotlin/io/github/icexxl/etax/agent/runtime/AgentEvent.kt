@@ -11,6 +11,10 @@ internal sealed interface AgentEvent {
         TOOL_CALL,
     }
 
+    data class GuiControlChanged(val status: GuiControlStatus) : AgentEvent {
+        override fun toLogLine(): String = "gui_control_changed status=${status.wireValue}"
+    }
+
     data class ContextCompaction(
         val operationId: String,
         val phase: String,
@@ -118,6 +122,15 @@ internal sealed interface AgentEvent {
                 "name=${name.toSafeLogToken()}, chars=$contentChars"
     }
 
+    data class SearchSuggestions(
+        val round: Int,
+        val index: Int,
+        val html: String,
+    ) : AgentEvent {
+        override fun toLogLine(): String =
+            "search_suggestions round=$round, index=$index, chars=${html.length}"
+    }
+
     data class AssistantReceived(
         val round: Int,
         val contentChars: Int,
@@ -167,10 +180,23 @@ internal sealed interface AgentEvent {
         val imageBytes: Int,
         /** 可选：旧版本 Runtime 不发送，消费端缺省时回退到摘要文本判断。 */
         val success: Boolean? = null,
+        val command: String? = null,
     ) : AgentEvent {
         override fun toLogLine(): String =
             "tool_finished round=$round, name=${name.toSafeLogToken()}, " +
                 "${resultSummary.toSafeResultLogFields()}, images=$imageCount, image_bytes=$imageBytes"
+    }
+
+    data class SubagentProgress(
+        val round: Int,
+        val toolCallId: String,
+        val subagentId: String,
+        val subagentType: String,
+        val snapshotJson: String,
+    ) : AgentEvent {
+        override fun toLogLine(): String =
+            "subagent_progress round=$round, id=${subagentId.toSafeLogToken()}, " +
+                "type=${subagentType.toSafeLogToken()}, chars=${snapshotJson.length}"
     }
 
     data class HostedToolStarted(

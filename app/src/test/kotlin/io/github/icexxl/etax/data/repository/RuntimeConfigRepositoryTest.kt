@@ -7,14 +7,66 @@ import io.github.icexxl.etax.data.model.ModelReasoningCapabilities
 import io.github.icexxl.etax.data.model.OpenAiCompatibleProviderSetting
 import io.github.icexxl.etax.data.model.ProviderTypes
 import io.github.icexxl.etax.data.model.ProviderSourceTypes
+import io.github.icexxl.etax.data.model.ProviderAuthModes
+import io.github.icexxl.etax.data.model.OpenAiEndpointMode
 import io.github.icexxl.etax.data.model.ReasoningEffort
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class RuntimeConfigRepositoryTest {
+    @Test
+    fun emptyProviderPromptStaysEmptyAcrossRuntimeSerialization() {
+        val provider = OpenAiCompatibleProviderSetting(
+            id = "prompt-provider", name = "测试", baseUrl = "https://example.invalid/v1",
+        )
+        val model = Model(id = "model", modelId = "fixture", displayName = "测试")
+        for (prompt in listOf(null, "", "  ", "你是小满")) {
+            val config = RuntimeConfigRepository.buildRuntimeConfig(provider.copy(systemPrompt = prompt), model)
+            val restored = Json.decodeFromString<AgentModelClient.ModelConfig>(
+                RuntimeConfigRepository.runtimeConfigJson(config),
+            )
+            assertEquals(prompt.orEmpty().trim(), restored.systemPrompt)
+        }
+    }
+
+    @Test
+    fun oauthConfigUsesBoundEndpointAndNeverSerializesApiKey() {
+        val provider = OpenAiCompatibleProviderSetting(
+            id = "oauth-provider",
+            name = "订阅",
+            baseUrl = "https://untrusted.invalid/v1",
+            apiKey = "fixture-must-not-be-projected",
+            authMode = ProviderAuthModes.XAI_GROK,
+            endpointMode = OpenAiEndpointMode.RESPONSES,
+        )
+        val config = RuntimeConfigRepository.buildRuntimeConfig(
+            provider,
+            Model(id = "local-model", modelId = "fixture-model", displayName = "测试"),
+        )
+
+        assertEquals("https://cli-chat-proxy.grok.com/v1", config.baseUrl)
+        assertEquals(OpenAiEndpointMode.CHAT_COMPLETIONS, config.openAiEndpointMode)
+        assertEquals(ProviderSourceTypes.XAI, config.providerSourceType)
+        assertEquals(ProviderAuthModes.XAI_GROK, config.authMode)
+        assertEquals("", config.apiKey)
+        val exported = RuntimeConfigRepository.runtimeConfigJson(config.copy(apiKey = "fixture-must-not-be-projected"))
+        assertFalse(exported.contains("fixture-must-not-be-projected"))
+        assertEquals("", Json.decodeFromString<AgentModelClient.ModelConfig>(exported).apiKey)
+    }
+
+    @Test
+    fun previousRuntimeJsonDefaultsToApiKeyAuthentication() {
+        val restored = Json.decodeFromString<AgentModelClient.ModelConfig>(
+            """{"baseUrl":"https://example.invalid/v1","apiKey":"fixture-key","model":"fixture","systemPrompt":""}""",
+        )
+        assertEquals(ProviderAuthModes.API_KEY, restored.authMode)
+        assertEquals("fixture-key", restored.apiKey)
+    }
+
     @Test
     fun buildsStructuredRuntimeConfigFromProviderAndModel() {
         val provider = OpenAiCompatibleProviderSetting(

@@ -4,6 +4,8 @@ import io.github.icexxl.etax.data.db.EtaDatabase
 import android.content.Context
 import io.github.icexxl.etax.agent.model.AgentModelClient
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -21,6 +23,42 @@ class AgentRunArchiveStoreTest {
         context = RuntimeEnvironment.getApplication()
         EtaDatabase.closeForTests()
         context.deleteDatabase("eta.db")
+    }
+
+    @Test
+    fun archiveDropsSearchSuggestionsAndKeepsAnswer() {
+        val answer = AgentEvent.AssistantBlockDelta(1, AgentEvent.AssistantBlockKind.TEXT, 0, 2, "回答")
+        AgentRunArchiveStore.add(context, AgentRunArchiveStore.ArchivedRun(
+            handoff = AgentRuntimeWire.EntryHandoff("search", "external_test", "fixture"),
+            events = listOf(answer, AgentEvent.SearchSuggestions(1, 0, "<div>不应保存</div>")),
+            result = AgentRuntimeWire.RunResult("search", true, "回答"),
+            createdAt = 1L,
+        ))
+        val restored = AgentRunArchiveStore.list(context).single()
+        assertEquals(listOf(answer), restored.events)
+        assertEquals("回答", restored.result.content)
+    }
+
+    @Test
+    fun onlyRunsWithAnExternalArchiveConsumerAllocateAnEventBuffer() {
+        assertNull(AgentRunArchiveStore.createEventBuffer(null))
+        assertNull(AgentRunArchiveStore.createEventBuffer(
+            AgentRuntimeWire.EntryHandoff(
+                id = "ui-run",
+                source = AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE,
+                payload = AgentUiHandoffPayload(conversationId = "conversation").toJson(),
+            )
+        ))
+        assertNull(AgentRunArchiveStore.createEventBuffer(
+            AgentRuntimeWire.EntryHandoff("invalid-run", "external_test", "invalid payload")
+        ))
+        assertNotNull(AgentRunArchiveStore.createEventBuffer(
+            AgentRuntimeWire.EntryHandoff(
+                id = "external-run",
+                source = "external_test",
+                payload = AgentExternalArchivePayload("请求", "session", "外部入口").toJson(),
+            )
+        ))
     }
 
     @Test

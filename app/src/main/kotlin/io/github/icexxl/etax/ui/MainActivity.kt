@@ -1,6 +1,5 @@
 package io.github.icexxl.etax.ui
 
-import io.github.icexxl.etax.ui.voice.ACTION_SPEECH_SETTINGS
 import android.app.UiModeManager
 import android.content.Intent
 import android.os.Bundle
@@ -15,31 +14,35 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import io.github.icexxl.etax.agent.runtime.AgentRuntimeService
 import io.github.icexxl.etax.agent.voice.EtaAssistantOverlayService
+import io.github.icexxl.etax.core.AndroidAgentLogger
 import io.github.icexxl.etax.data.model.AppearanceThemeMode
 import io.github.icexxl.etax.data.repository.AppearanceSettingsRepository
 import io.github.icexxl.etax.ui.app.AgentAppRoot
-import io.github.icexxl.etax.ui.app.ArchivedConversationRequest
 import io.github.icexxl.etax.ui.app.AgentAppTheme
 import io.github.icexxl.etax.ui.app.PredictiveBackController
 import io.github.icexxl.etax.ui.app.installStartupSplash
+import java.util.Collections
+import java.util.IdentityHashMap
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    private var assistantConversationKey by mutableStateOf<String?>(null)
-    private var requestedConversationId by mutableStateOf<String?>(null)
-    private var requestedArchivedConversation by mutableStateOf<ArchivedConversationRequest?>(null)
+    private var launchRequests by mutableStateOf(MainActivityLaunchRequests())
+    // 通知栏点进来的 OpenClaw 会话（一次性消费）
     private var requestedOpenClawSession by mutableStateOf<String?>(null)
     private var appliedPredictiveBackEnabled = true
-    private var speechSettingsRequested by mutableStateOf(false)
-    private var terminalRequested by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AndroidAgentLogger.info("Agent UI created: task=$taskId restored=${savedInstanceState != null}")
         var contentReady = false
         installStartupSplash { contentReady }
         enableEdgeToEdge()
-        updateAssistantHandoff(intent)
+        launchRequests = MainActivityLaunchRequests.restore(savedInstanceState, intent)
+        requestedOpenClawSession = intent
+            ?.getStringExtra(EXTRA_OPENCLAW_SESSION)
+            ?.takeIf(String::isNotBlank)
         lifecycleScope.launch {
             val initialAppearance = AppearanceSettingsRepository.settings()
             appliedPredictiveBackEnabled = initialAppearance.predictiveBackEnabled
@@ -67,22 +70,35 @@ class MainActivity : ComponentActivity() {
                     onResolvedDarkModeChange = ::updateSystemBars,
                 ) {
                     AgentAppRoot(
-                        assistantConversationKey = assistantConversationKey,
-                        requestedConversationId = requestedConversationId,
-                        onRequestedConversationOpened = { requestedConversationId = null; intent?.action = null },
+                        assistantConversationKey = launchRequests.assistantConversationKey,
+                        requestedConversationId = launchRequests.conversationId,
+                        onRequestedConversationOpened = {
+                            launchRequests = launchRequests.copy(conversationId = null)
+                            intent?.action = null
+                        },
+                        requestedArchivedConversation = launchRequests.archivedConversation,
+                        onArchivedConversationOpened = {
+                            launchRequests = launchRequests.copy(archivedConversation = null)
+                            intent?.action = null
+                        },
                         requestedOpenClawSession = requestedOpenClawSession,
                         onRequestedOpenClawSessionOpened = {
                             requestedOpenClawSession = null
                             intent?.removeExtra(EXTRA_OPENCLAW_SESSION)
                         },
-                        requestedArchivedConversation = requestedArchivedConversation,
-                        onArchivedConversationOpened = { requestedArchivedConversation = null; intent?.action = null },
-                        openSpeechSettings = speechSettingsRequested,
-                        openTerminal = terminalRequested,
-                        onTerminalOpened = { terminalRequested = false; intent?.action = null },
-                        onSpeechSettingsOpened = { speechSettingsRequested = false; intent?.action = null },
+                        openSpeechSettings = launchRequests.speechSettings,
+                        openTerminal = launchRequests.terminal,
+                        onTerminalOpened = {
+                            launchRequests = launchRequests.copy(terminal = false)
+                            intent?.action = null
+                        },
+                        onSpeechSettingsOpened = {
+                            launchRequests = launchRequests.copy(speechSettings = false)
+                            intent?.action = null
+                        },
                         onAssistantConversationOpened = { opened ->
-                            assistantConversationKey = null
+                            launchRequests = launchRequests.copy(assistantConversationKey = null)
+                            intent?.action = null
                             if (opened) {
                                 EtaAssistantOverlayService.notifyHandoffReady(this@MainActivity)
                             }
@@ -94,44 +110,43 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        updateAssistantHandoff(intent)
+    override fun onStart() {
+        super.onStart()
+        startedInstances.add(this)
+        isInForeground = true
+        AgentRuntimeService.onEtaUiVisibilityChanged()
     }
 
-    private fun updateAssistantHandoff(intent: Intent?) {
-        val openClawSession = intent?.getStringExtra(EXTRA_OPENCLAW_SESSION)?.takeIf(String::isNotBlank)
-        if (openClawSession != null) {
-            requestedOpenClawSession = openClawSession
-            return
-        }
-        if (intent?.action == ACTION_OPEN_TERMINAL) {
-            terminalRequested = true
-            return
-        }
-        if (intent?.action == ACTION_SPEECH_SETTINGS) {
-            speechSettingsRequested = true
-            return
-        }
-        if (intent?.action == ACTION_OPEN_CONVERSATION_ID) {
-            requestedConversationId = intent.getStringExtra(EXTRA_CONVERSATION_ID)?.takeIf(String::isNotBlank)
-            return
-        }
-        if (intent?.action == ACTION_OPEN_ARCHIVED_CONVERSATION) {
-            val source = intent.getStringExtra(EXTRA_HANDOFF_SOURCE)?.takeIf(String::isNotBlank)
-            val key = intent.getStringExtra(EXTRA_CONVERSATION_KEY)?.takeIf(String::isNotBlank)
-            requestedArchivedConversation = if (source != null && key != null) {
-                ArchivedConversationRequest(source, key)
-            } else {
-                null
-            }
-            return
-        }
-        if (intent?.action != EtaAssistantOverlayService.ACTION_OPEN_CONVERSATION) return
-        assistantConversationKey = intent.getStringExtra(
-            EtaAssistantOverlayService.EXTRA_CONVERSATION_KEY,
-        )?.takeIf(String::isNotBlank)
+    override fun onStop() {
+        startedInstances.remove(this)
+        isInForeground = startedInstances.isNotEmpty() || isChangingConfigurations
+        AgentRuntimeService.onEtaUiVisibilityChanged()
+        super.onStop()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val fromLauncher = intent.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_LAUNCHER)
+        AndroidAgentLogger.info("Agent UI new intent: task=$taskId launcher=$fromLauncher")
+        setIntent(intent)
+        launchRequests = launchRequests.accept(intent)
+        requestedOpenClawSession = intent
+            .getStringExtra(EXTRA_OPENCLAW_SESSION)
+            ?.takeIf(String::isNotBlank)
+    }
+
+    override fun onDestroy() {
+        startedInstances.remove(this)
+        isInForeground = startedInstances.isNotEmpty() || isChangingConfigurations
+        AndroidAgentLogger.info(
+            "Agent UI destroyed: task=$taskId changing_configuration=$isChangingConfigurations finishing=$isFinishing",
+        )
+        super.onDestroy()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        launchRequests.saveTo(outState)
+        super.onSaveInstanceState(outState)
     }
 
     private fun updateApplicationNightMode(themeMode: AppearanceThemeMode) {
@@ -174,6 +189,12 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        private val startedInstances = Collections.newSetFromMap(IdentityHashMap<MainActivity, Boolean>())
+
+        @Volatile
+        internal var isInForeground: Boolean = false
+            private set
+
         const val ACTION_OPEN_TERMINAL = "io.github.icexxl.etax.action.OPEN_TERMINAL"
         /** 运行浮层的结果卡片回到本体：App 发起的 run 带会话 ID，直接打开该会话。 */
         const val ACTION_OPEN_CONVERSATION_ID = "io.github.icexxl.etax.action.OPEN_CONVERSATION_ID"
