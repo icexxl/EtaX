@@ -49,6 +49,7 @@ import io.github.icexxl.etax.agent.device.RootAccess
 import io.github.icexxl.etax.core.AndroidAgentLogger
 import io.github.icexxl.etax.data.repository.RuntimeConfigRepository
 import io.github.icexxl.etax.ui.AppearanceSettingsScreen
+import io.github.icexxl.etax.ui.IncomingShareRequest
 import io.github.icexxl.etax.ui.SettingsScreen
 import io.github.icexxl.etax.ui.components.MiuixDialogActions
 import io.github.icexxl.etax.ui.model.AgentHomeAction
@@ -120,6 +121,8 @@ fun AgentAppRoot(
     requestedOpenClawSession: String? = null,
     onRequestedOpenClawSessionOpened: () -> Unit = {},
     onArchivedConversationOpened: () -> Unit = {},
+    sharedContent: IncomingShareRequest? = null,
+    onSharedContentAccepted: () -> Unit = {},
     openSpeechSettings: Boolean = false,
     openTerminal: Boolean = false,
     onTerminalOpened: () -> Unit = {},
@@ -296,6 +299,20 @@ fun AgentAppRoot(
         onAssistantConversationOpened(opened)
     }
 
+    LaunchedEffect(sharedContent) {
+        val request = sharedContent ?: return@LaunchedEffect
+        homeMode = io.github.icexxl.etax.channel.openclaw.HomeMode.ETA
+        homeModeStore.save(homeMode)
+        focusManager.clearFocus()
+        conversationPaneOpen = false
+        if (backStack.lastOrNull() != AppRoute.Home) {
+            navigator.popToHome()
+            navigationResetKey++
+        }
+        agentState.acceptSharedContent(request)
+        onSharedContentAccepted()
+    }
+
     fun pushRoute(
         route: AppRoute,
         restoreConversationPaneOnBack: Boolean = conversationPaneOpen,
@@ -369,6 +386,9 @@ fun AgentAppRoot(
             onRefreshKimiWeb = appViewModel::refreshKimiWeb,
             onOpenBrowser = { openConversationBrowser() },
             onSelectConversation = { conversationId -> selectConversation(conversationId) },
+            onConversationTogglePin = { conversation ->
+                agentState.toggleConversationPin(conversation.id)
+            },
             onConversationRename = { conversation ->
                 conversationRenameTarget = conversation
             },

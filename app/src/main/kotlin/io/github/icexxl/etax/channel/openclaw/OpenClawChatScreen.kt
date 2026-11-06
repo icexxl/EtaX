@@ -85,7 +85,6 @@ import io.github.icexxl.etax.ui.markdown.StaticMarkdown
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import io.github.icexxl.etax.ui.components.EtaTextButton
 import io.github.icexxl.etax.ui.components.inputPulseBorder
 import io.github.icexxl.etax.ui.components.rememberInputPulseProgress
 import androidx.compose.animation.animateContentSize

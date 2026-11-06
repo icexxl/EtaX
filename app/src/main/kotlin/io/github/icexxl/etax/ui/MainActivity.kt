@@ -86,6 +86,11 @@ class MainActivity : ComponentActivity() {
                             requestedOpenClawSession = null
                             intent?.removeExtra(EXTRA_OPENCLAW_SESSION)
                         },
+                        sharedContent = launchRequests.sharedContent,
+                        onSharedContentAccepted = {
+                            launchRequests = launchRequests.copy(sharedContent = null)
+                            intent?.action = null
+                        },
                         openSpeechSettings = launchRequests.speechSettings,
                         openTerminal = launchRequests.terminal,
                         onTerminalOpened = {

@@ -63,7 +63,10 @@
 # 保留源码与行号属性，便于使用 release mapping 还原线上堆栈。
 -keepattributes SourceFile,LineNumberTable
 
-# app_process 通过固定类名启动受控的一方应用操作入口。
+# app_process 通过固定类名启动受控的一方应用与虚拟屏操作入口。
 -keep class io.github.icexxl.etax.agent.phone.PhoneCommandMain {
+    public static void main(java.lang.String[]);
+}
+-keep class io.github.icexxl.etax.agent.virtualdisplay.VirtualDisplayCommandMain {
     public static void main(java.lang.String[]);
 }

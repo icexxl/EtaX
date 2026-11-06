@@ -26,7 +26,9 @@ class PrefsDefaultsTest {
                 Prefs.Keys.AGENT_THINKING_ENABLED to true,
                 Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED to true,
                 Prefs.Keys.CHAT_AURORA_BACKGROUND to true,
-                Prefs.Keys.AGENT_SUBAGENT_ENABLED to true,            ),
+                Prefs.Keys.AGENT_SUBAGENT_ENABLED to true,
+                Prefs.Keys.AGENT_VIRTUAL_DISPLAY_ENABLED to true,
+            ),
             Prefs.Keys.BOOLEAN_DEFAULTS,
         )
         assertFalse(
@@ -46,7 +48,9 @@ class PrefsDefaultsTest {
                 Prefs.Keys.AGENT_THINKING_ENABLED,
                 Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED,
                 Prefs.Keys.CHAT_AURORA_BACKGROUND,
-                Prefs.Keys.AGENT_SUBAGENT_ENABLED,            ),
+                Prefs.Keys.AGENT_SUBAGENT_ENABLED,
+                Prefs.Keys.AGENT_VIRTUAL_DISPLAY_ENABLED,
+            ),
             Prefs.Keys.LOCAL_AGENT_KEYS,
         )
     }

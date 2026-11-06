@@ -24,20 +24,18 @@ import androidx.compose.ui.unit.dp
 import io.github.icexxl.etax.R
 import io.github.icexxl.etax.agent.tool.AgentToolCapabilities
 import io.github.icexxl.etax.ui.app.rememberDeviceCapabilities
-import io.github.icexxl.etax.ui.components.EtaArrowPreference
-import io.github.icexxl.etax.ui.components.EtaCard
-import io.github.icexxl.etax.ui.components.EtaPreferenceDefaults
-import io.github.icexxl.etax.ui.components.EtaPreferenceGroup
-import io.github.icexxl.etax.ui.components.EtaPreferenceGroupTitle
 import io.github.icexxl.etax.ui.components.MiuixScaffoldPage
 import io.github.icexxl.etax.ui.model.AgentToolsAction
 import io.github.icexxl.etax.ui.model.AgentToolsUiState
 import io.github.icexxl.etax.ui.model.ToolItemUi
 import io.github.icexxl.etax.ui.model.projectToolGroups
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.TabRow
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 
 private object ToolsMetrics {
-    val GridHorizontalPadding = 16.dp
+    val GridHorizontalPadding = 12.dp
     val GridGap = 12.dp
 }
 
@@ -63,12 +61,16 @@ fun AgentToolsScreen(
                 tabs = listOf(stringResource(R.string.capability_current_device), stringResource(R.string.capability_all)),
                 selectedTabIndex = if (showAll) 1 else 0,
                 onTabSelected = { showAll = it == 1 },
-                modifier = Modifier.padding(horizontal = EtaPreferenceDefaults.SidePadding, vertical = 8.dp),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             )
         }
         item(key = "capability-discovery") {
-            EtaPreferenceGroup(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) {
-                EtaArrowPreference(
+            Card(
+                modifier = Modifier
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 8.dp),
+            ) {
+                ArrowPreference(
                     title = stringResource(R.string.capability_enhancements),
                     summary = stringResource(R.string.capability_enhancements_summary),
                     onClick = { onAction(AgentToolsAction.OpenEnhancements) },
@@ -77,7 +79,7 @@ fun AgentToolsScreen(
         }
         groups.forEach { group ->
             item(key = "${group.id}-title") {
-                EtaPreferenceGroupTitle(group.title)
+                SmallTitle(group.title)
             }
             items(
                 items = group.tools.chunked(2),

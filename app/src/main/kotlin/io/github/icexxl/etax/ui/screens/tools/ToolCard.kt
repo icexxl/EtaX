@@ -21,8 +21,6 @@ import io.github.icexxl.etax.R
 import io.github.icexxl.etax.agent.tool.AgentToolCapabilities
 import io.github.icexxl.etax.agent.tool.RootRequirement
 import io.github.icexxl.etax.ui.components.EtaFeatureCard
-import io.github.icexxl.etax.ui.components.EtaPreferenceColors
-import io.github.icexxl.etax.ui.components.EtaPreferenceIcon
 import io.github.icexxl.etax.ui.components.ItemDescriptionDialog
 import io.github.icexxl.etax.ui.components.iconForTool
 import io.github.icexxl.etax.ui.model.AgentToolsAction
@@ -63,7 +61,14 @@ internal fun ToolCard(
         summary = description,
         modifier = modifier,
         onClick = { if (action != null) onAction(action) else showDescription = true },
-        icon = { EtaPreferenceIcon(icon = iconForTool(tool.id), tint = EtaPreferenceColors.Green) },
+        icon = {
+            Icon(
+                imageVector = iconForTool(tool.id),
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = MiuixTheme.colorScheme.primary,
+            )
+        },
         action = if (action != null) {
             {
                 IconButton(onClick = { showDescription = true }) {

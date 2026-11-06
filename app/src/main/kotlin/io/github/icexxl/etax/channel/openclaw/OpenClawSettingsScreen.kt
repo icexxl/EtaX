@@ -37,7 +37,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import io.github.icexxl.etax.ui.components.EtaTextButton
+import top.yukonga.miuix.kmp.basic.TextButton
 import io.github.icexxl.etax.ui.components.MiuixScaffoldPage
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Icon
@@ -176,12 +176,12 @@ internal fun OpenClawSettingsScreen(
                     },
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    EtaTextButton(
+                    TextButton(
                         text = if (testing) "连接中…" else "测试连接",
                         onClick = { testConnection() },
                         enabled = !testing && !saving,
                     )
-                    EtaTextButton(
+                    TextButton(
                         text = if (saving) "保存中…" else "保存",
                         onClick = { save() },
                         enabled = !saving,
@@ -205,7 +205,7 @@ internal fun OpenClawSettingsScreen(
                             color = MiuixTheme.colorScheme.error,
                             modifier = Modifier.weight(1f),
                         )
-                        EtaTextButton(
+                        TextButton(
                             text = "授权",
                             onClick = { permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) },
                         )

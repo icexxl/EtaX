@@ -147,6 +147,7 @@ internal fun AgentChatBody(
     pendingFileReferences: List<PendingFileReferenceUi>,
     queuedMessages: List<QueuedMessageUi> = emptyList(),
     inputSyncVersion: Int = 0,
+    focusInputOnSync: Boolean = true,
     messageEdit: MessageEditUiState?,
     onReasoningEffortChange: (ReasoningEffort) -> Unit,
     onCompactContext: () -> Unit,
@@ -273,6 +274,7 @@ internal fun AgentChatBody(
             pendingFileReferences = pendingFileReferences,
             queuedMessages = queuedMessages,
             inputSyncVersion = inputSyncVersion,
+            focusInputOnSync = focusInputOnSync,
             messageEdit = messageEdit,
             showEmptySuggestions = !isKeyboardVisible,
             keepBottomAnchored = keepBottomAnchored,
@@ -342,6 +344,7 @@ private fun AgentChatScaffold(
     pendingFileReferences: List<PendingFileReferenceUi>,
     queuedMessages: List<QueuedMessageUi>,
     inputSyncVersion: Int,
+    focusInputOnSync: Boolean,
     messageEdit: MessageEditUiState?,
     showEmptySuggestions: Boolean,
     keepBottomAnchored: Boolean,
@@ -413,6 +416,7 @@ private fun AgentChatScaffold(
                 pendingFileReferences = pendingFileReferences,
                 queuedMessages = queuedMessages,
                 inputSyncVersion = inputSyncVersion,
+                focusInputOnSync = focusInputOnSync,
                 messageEdit = messageEdit,
                 onSubmit = onSubmit,
                 onInterruptAndSubmit = onInterruptAndSubmit,
@@ -811,8 +815,10 @@ internal fun AgentConversationMessages(
                                 message.id == currentBrowserMessageId,
                             showCopyAction = message !is AgentMessageUi ||
                                 message.characterEditable || message.id in finalResultMessageIds,
-                            showMessageActions = message.id in finalResultMessageIds ||
-                                (message is AgentMessageUi && message.characterEditable),
+                            showMessageActions = !assistantOverlay && (
+                                message.id in finalResultMessageIds ||
+                                    (message is AgentMessageUi && message.characterEditable)
+                                ),
                             messageActionsEnabled = messageActionsEnabled,
                             isEditing = message.id == editTargetMessageId,
                             onEditMessage = onEditMessage,
@@ -1041,6 +1047,7 @@ private fun AgentChatBottomBar(
     pendingFileReferences: List<PendingFileReferenceUi>,
     queuedMessages: List<QueuedMessageUi>,
     inputSyncVersion: Int,
+    focusInputOnSync: Boolean,
     messageEdit: MessageEditUiState?,
     onSubmit: (String) -> Unit,
     onInterruptAndSubmit: (String) -> Unit,
@@ -1118,6 +1125,7 @@ private fun AgentChatBottomBar(
                 pendingFileReferences = pendingFileReferences,
                 queuedMessages = queuedMessages,
                 inputSyncVersion = inputSyncVersion,
+                focusInputOnSync = focusInputOnSync,
                 isEditingMessage = messageEdit != null,
                 editHasLaterTurns = messageEdit?.hasLaterTurns == true,
                 preserveFollowingMessages = messageEdit?.preserveFollowingMessages == true,
