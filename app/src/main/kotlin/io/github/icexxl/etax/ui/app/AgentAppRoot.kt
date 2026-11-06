@@ -424,6 +424,7 @@ fun AgentAppRoot(
                 null
             },
             openClawHome = homeMode == io.github.icexxl.etax.channel.openclaw.HomeMode.OPENCLAW,
+            openClawMenu = { io.github.icexxl.etax.channel.openclaw.OpenClawTopBarMenu(store = openClawStore) },
             homeTitle = if (homeMode == io.github.icexxl.etax.channel.openclaw.HomeMode.OPENCLAW) {
                 val openClawState = openClawStore.state.collectAsState().value
                 openClawState.agents.firstOrNull { it.id == openClawState.currentAgentId }?.name

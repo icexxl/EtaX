@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.RocketLaunch
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -220,6 +221,28 @@ internal fun AgentChatBody(
     var sentFromKeyboard by remember { mutableStateOf(false) }
     var keepBottomAnchored by rememberSaveable { mutableStateOf(true) }
 
+    // 背景光幕的"思考中"状态：从发送开始，到**最终回答开始输出**为止。
+    // 最终回答 = 本轮最后一条正在流式输出、且已有正文的 Agent 消息，并且它后面没有
+    // 思考/工具步骤（说明模型已经不再调工具，开始写给用户的结果）。
+    // 一出现最终回答就让光幕往回收，而不是等整段输出完。
+    val answerStarted = remember(messages, isStreaming) {
+        if (!isStreaming) {
+            false
+        } else {
+            val turnStart = messages.indexOfLast { it is UserMessageUi } + 1
+            val turn = messages.subList(turnStart.coerceAtMost(messages.size), messages.size)
+            val last = turn.lastOrNull()
+            last is AgentMessageUi && last.isStreaming && last.content.isNotBlank()
+        }
+    }
+    val auroraThinking = isStreaming && !answerStarted
+    LaunchedEffect(auroraThinking) {
+        AuroraMood.thinking.value = auroraThinking
+    }
+    DisposableEffect(Unit) {
+        onDispose { AuroraMood.thinking.value = false }
+    }
+
     LaunchedEffect(isStreaming) {
         if (isStreaming && sentFromKeyboard) {
             keyboard?.hide()
@@ -356,7 +379,10 @@ private fun AgentChatScaffold(
     modifier: Modifier = Modifier,
 ) {
     val surfaceColor = MiuixTheme.colorScheme.surface
-    val frostEnabled = hasMessages && LocalBlurEnabled.current && isRuntimeShaderSupported()
+    // 动态背景开启时不再用磨砂层：它的底色不透明，会在输入框上方形成一条黑带
+    val auroraEnabled = rememberAuroraEnabled()
+    val frostEnabled = hasMessages && !auroraEnabled && LocalBlurEnabled.current &&
+        isRuntimeShaderSupported()
     val messageBackdrop = rememberLayerBackdrop {
         // Backdrop 必须包含不透明底色，否则文字边缘模糊到透明区域时会出现黑边。
         drawRect(surfaceColor)
@@ -410,7 +436,6 @@ private fun AgentChatScaffold(
     ) { innerPadding ->
         val bottomPadding = innerPadding.calculateBottomPadding()
         Box(modifier = Modifier.fillMaxSize()) {
-        AuroraBackground(modifier = Modifier.matchParentSize(), enabled = rememberAuroraEnabled())
         if (!hasMessages) {
             EmptyChatState(
                 showSuggestions = showEmptySuggestions,
@@ -1071,25 +1096,12 @@ private fun AgentChatBottomBar(
                     ),
             )
         } else {
-            // 空白主页沿用原来的轻微渐隐，不改变主页视觉。
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(16.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                MiuixTheme.colorScheme.surface,
-                            ),
-                        )
-                    ),
-            )
+            // 留出间距即可：不铺底色，避免在动态光效上形成一条深色带
+            Spacer(Modifier.fillMaxWidth().height(16.dp))
         }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MiuixTheme.colorScheme.surface)
                 .navigationBarsPadding()
                 .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
         ) {

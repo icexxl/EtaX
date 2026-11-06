@@ -72,7 +72,8 @@ internal fun Modifier.captureForTopBar(backdrop: LayerBackdrop?): Modifier =
 
 @Composable
 internal fun topBarContainerColor(backdrop: LayerBackdrop?): Color =
-    if (backdrop == null) MiuixTheme.colorScheme.surface else Color.Transparent
+    // 没有磨砂能力时用半透明底色，让底层的动态光效透出来
+    if (backdrop == null) MiuixTheme.colorScheme.surface.copy(alpha = 0.86f) else Color.Transparent
 
 private const val TopBarBlurRadius = 25f
 private const val TopBarSurfaceAlpha = 0.8f

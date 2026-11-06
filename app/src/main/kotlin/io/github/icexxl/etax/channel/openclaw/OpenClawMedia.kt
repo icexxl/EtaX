@@ -111,6 +111,27 @@ internal object OpenClawMedia {
         }
     }
 
+    /**
+     * 附件刚发出时，服务端可能还没把文件复制/落盘完成，/file 会短暂 404。
+     * 这里做几次退避重试，避免用户"刚收到点不开、过一会又能打开"。
+     */
+    suspend fun downloadWithRetry(
+        context: Context,
+        client: OpenClawApi,
+        config: OpenClawConfig,
+        mediaUrl: String,
+        mediaName: String?,
+        attempts: Int = 4,
+    ): Result<File> {
+        var last: Result<File> = Result.failure(java.io.IOException("未开始"))
+        for (index in 0 until attempts) {
+            last = download(context, client, config, mediaUrl, mediaName)
+            if (last.isSuccess) return last
+            kotlinx.coroutines.delay(400L * (index + 1))
+        }
+        return last
+    }
+
     /** URL 摘要 + 清洗后的文件名，避免同名不同源互相覆盖。 */
     private fun cacheFileName(mediaUrl: String, name: String): String {
         val digest = MessageDigest.getInstance("SHA-256")

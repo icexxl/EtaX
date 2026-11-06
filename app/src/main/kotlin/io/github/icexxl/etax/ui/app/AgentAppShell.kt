@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ShortText
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.outlined.MoreHoriz
@@ -45,6 +44,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.icexxl.etax.R
 import io.github.icexxl.etax.ui.components.AdaptiveTopAppBar
+import io.github.icexxl.etax.ui.components.AuroraBackground
+import io.github.icexxl.etax.ui.components.rememberAuroraEnabled
 import io.github.icexxl.etax.ui.components.CharacterAvatar
 import io.github.icexxl.etax.channel.openclaw.HomeMode
 import io.github.icexxl.etax.ui.components.ConversationSidePaneScaffold
@@ -73,6 +74,8 @@ import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowListPopup
+import androidx.compose.material.icons.rounded.Forum
+import androidx.compose.material.icons.rounded.SmartToy
 
 /**
  * Agent App 统一壳层。
@@ -114,6 +117,7 @@ internal fun AgentAppShell(
     onHomeModeChange: (HomeMode) -> Unit,
     openClawHome: Boolean = false,
     homeTitle: String? = null,
+    openClawMenu: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
     openClawPane: (@Composable (androidx.compose.ui.unit.Dp) -> Unit)? = null,
     homeCharacter: RoleplayChatUi? = null,
@@ -122,22 +126,30 @@ internal fun AgentAppShell(
 ) {
     val scrollBehavior = MiuixScrollBehavior()
     val backdrop = rememberTopBarBackdrop()
-    val topBarColor = topBarContainerColor(backdrop)
+    val auroraEnabled = rememberAuroraEnabled()
+    val translucentTopBar = auroraEnabled && currentRoute is AppRoute.Home
+    val topBarColor = if (translucentTopBar) Color.Transparent else topBarContainerColor(backdrop)
     val pageContent: @Composable () -> Unit = {
+        // 光效铺在最底层：顶栏的磨砂层与底部的渐隐层都能透出它
+        Box(modifier = Modifier.fillMaxSize()) {
+        AuroraBackground(
+            modifier = Modifier.matchParentSize(),
+            enabled = rememberAuroraEnabled(),
+        )
         Scaffold(
             modifier = Modifier.fillMaxSize(),
+            containerColor = androidx.compose.ui.graphics.Color.Transparent,
             contentWindowInsets = WindowInsets.safeDrawing.only(
                 WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
             ),
             topBar = {
                 if (currentRoute !is AppRoute.Settings) {
-                    TopBarBackdrop(backdrop) {
+                    val barContent: @Composable () -> Unit = {
                         AgentTopBar(
                             route = currentRoute,
                             scrollBehavior = scrollBehavior,
                             color = topBarColor,
                             onBack = onBack,
-                            onOpenConversationPane = onOpenConversationPane,
                             onNewConversation = onNewConversation,
                             onOpenTerminal = onOpenTerminal,
                             onLaunchKimiWeb = onLaunchKimiWeb,
@@ -150,7 +162,19 @@ internal fun AgentAppShell(
                             onOpenCharacter = onOpenCharacter,
                             openClawHome = openClawHome,
                             homeTitle = homeTitle,
+                            openClawMenu = openClawMenu,
+                            onToggleHomeMode = {
+                                onHomeModeChange(
+                                    if (homeMode == HomeMode.OPENCLAW) HomeMode.ETA else HomeMode.OPENCLAW,
+                                )
+                            },
                         )
+                    }
+                    // 首页开启动效时直接透出底层光效；其余路由保留磨砂层。
+                    if (translucentTopBar) {
+                        barContent()
+                    } else {
+                        TopBarBackdrop(backdrop) { barContent() }
                     }
                 }
             },
@@ -163,6 +187,7 @@ internal fun AgentAppShell(
             ) {
                 content(padding)
             }
+        }
         }
     }
 
@@ -203,7 +228,6 @@ private fun AgentTopBar(
     scrollBehavior: ScrollBehavior,
     color: Color,
     onBack: () -> Unit,
-    onOpenConversationPane: () -> Unit,
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onLaunchKimiWeb: () -> Unit,
@@ -216,16 +240,20 @@ private fun AgentTopBar(
     onOpenCharacter: () -> Unit,
     openClawHome: Boolean = false,
     homeTitle: String? = null,
+    openClawMenu: (@Composable () -> Unit)? = null,
+    onToggleHomeMode: () -> Unit = {},
 ) {
     val isHome = route is AppRoute.Home
     val navigationIcon: @Composable () -> Unit = {
         if (isHome) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onOpenConversationPane) {
+                // 会话侧栏改为左滑打开，左上角改成在「模型对话」和「OpenClaw 对话」之间切换。
+                // 图标显示的是"点了会切到哪"：在模型对话时显示 OpenClaw 图标，反之亦然。
+                IconButton(onClick = onToggleHomeMode) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ShortText,
-                        modifier = Modifier.size(24.dp),
-                        contentDescription = stringResource(R.string.action_conversation_history),
+                        imageVector = if (openClawHome) Icons.Rounded.Forum else Icons.Rounded.SmartToy,
+                        modifier = Modifier.size(22.dp),
+                        contentDescription = if (openClawHome) "切换到模型对话" else "切换到 OpenClaw 对话",
                     )
                 }
                 // 角色对话的身份标识放在顶栏左侧，点按进入角色详情；普通对话保持空标题。
@@ -251,10 +279,17 @@ private fun AgentTopBar(
                 onOpenBrowser = onOpenBrowser,
             )
         }
+        // OpenClaw 页：同一位置放「切换 agent / 会话」按钮
+        if (isHome && openClawHome) openClawMenu?.invoke()
     }
 
     // OpenClaw 首页用 agent 名作标题，与模型对话页共用同一行顶栏，不再另起一行遮挡内容。
-    val resolvedTitle = if (isHome && !homeTitle.isNullOrBlank()) homeTitle else titleForRoute(route)
+    val resolvedTitle = when {
+        isHome && !homeTitle.isNullOrBlank() -> homeTitle
+        // 模型对话首页顶端中间显示应用名；角色对话左侧已有角色身份，不再重复
+        isHome && !openClawHome && homeCharacter == null -> "EtaX"
+        else -> titleForRoute(route)
+    }
 
     // 首页聊天舞台与终端这类整屏工具页没有可驱动折叠的滚动列表，大标题会一直展开、
     // 白占一屏顶部；它们使用紧凑标题，其余二级内容页统一使用可折叠大标题。
