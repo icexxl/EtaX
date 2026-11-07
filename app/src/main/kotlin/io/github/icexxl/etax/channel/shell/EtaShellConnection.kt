@@ -38,10 +38,8 @@ internal object EtaShellConnection {
 
     fun isConnected(context: Context): Boolean = shell(context) != null
 
-    /** 截断连接（例如用户解除配对、虚拟屏释放后）。 */
-    fun forget(context: Context) {
-        hub(context).forget()
-    }
+    /** 仅显式断开时调用；普通页面离开不影响助手。 */
+    suspend fun forget(context: Context): Boolean = HelperLauncher.disconnect(context)
 }
 
 /**
@@ -95,7 +93,19 @@ internal class HelperHub(private val appContext: Context) {
             return rejected(HelperHandoff.Reject.IdentityMismatch.name)
         }
         lastRejection = null
+        // 助手进程消失时把状态清掉，避免上层拿着死 Binder 一直报 DeadObjectException
+        try {
+            binder.linkToDeath({ mutableShell.compareAndSet(shell, null) }, 0)
+        } catch (error: android.os.RemoteException) {
+            lastRejection = HelperHandoff.Reject.BadBinder.name
+            return rejected(HelperHandoff.Reject.BadBinder.name)
+        }
         mutableShell.value = shell
+        if (!binder.isBinderAlive) {
+            mutableShell.compareAndSet(shell, null)
+            lastRejection = HelperHandoff.Reject.BadBinder.name
+            return rejected(HelperHandoff.Reject.BadBinder.name)
+        }
         Log.i(TAG, "helper connected: $packageName uid=$callingUid pid=$callingPid")
         return Bundle().apply {
             putString(HelperHandoff.KEY_RESULT, HelperHandoff.RESULT_OK)

@@ -62,6 +62,29 @@ class OpenClawSettingsTest {
     }
 
     @Test
+    fun `changing gateway or token clears cursor and previous selection`() {
+        val settings = OpenClawSettings(context, tokenStore)
+        val first = OpenClawConfig("https://first.example", "one")
+        settings.save(first)
+        settings.saveLastSeq(42)
+        settings.saveLastAgentId("agent-a")
+        settings.saveLastSessionKey("agent:agent-a:eta:direct:old")
+        settings.saveLastSeenAt(mapOf("agent:agent-a:eta:direct:old" to 100L))
+        settings.save(first.copy(baseUrl = "https://first.example/"))
+        assertEquals(42L, settings.lastSeq())
+
+        settings.save(first.copy(token = "two"))
+        assertEquals(0L, settings.lastSeq())
+        assertEquals("", settings.lastAgentId())
+        assertEquals("", settings.lastSessionKey())
+        assertTrue(settings.loadLastSeenAt().isEmpty())
+
+        settings.saveLastSeq(7)
+        settings.save(first.copy(baseUrl = "https://second.example", token = "two"))
+        assertEquals(0L, settings.lastSeq())
+    }
+
+    @Test
     fun `archive filter defaults off and survives a new settings instance`() {
         val a = OpenClawSettings(context, tokenStore)
         assertFalse(a.showArchivedSessions())

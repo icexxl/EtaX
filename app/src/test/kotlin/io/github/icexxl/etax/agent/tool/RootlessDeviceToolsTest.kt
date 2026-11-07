@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.provider.Settings
+import android.view.Display
 import io.github.icexxl.etax.agent.device.AgentNotificationHistoryService
 import io.github.icexxl.etax.agent.device.BoundedRootCommandExecutor
 import io.github.icexxl.etax.agent.device.RootShellDeviceController
@@ -42,6 +43,22 @@ class RootlessDeviceToolsTest {
             assertEquals("ACCESSIBILITY_UNAVAILABLE", JSONObject(result).getString("code"))
         }
         assertEquals("ROOT_REQUIRED", JSONObject(controller.pressKey("PASTE")).getString("code"))
+    }
+
+    @Test
+    fun virtualDisplayGlobalKeysNeverFallThroughToPhysicalDisplay() {
+        val controller = RootShellDeviceController(NoOpLogger, rootAvailable = { false })
+        val virtual = Display.DEFAULT_DISPLAY + 7
+        for (button in listOf("BACK", "HOME", "RECENTS")) {
+            val result = JSONObject(controller.pressKey(button, virtual))
+            assertFalse(result.getBoolean("ok"))
+            assertEquals("VIRTUAL_DISPLAY_INPUT_FAILED", result.getString("code"))
+        }
+        for (button in listOf("NOTIFICATIONS", "QUICK_SETTINGS")) {
+            val result = JSONObject(controller.pressKey(button, virtual))
+            assertFalse(result.getBoolean("ok"))
+            assertEquals("MAIN_DISPLAY_ONLY", result.getString("code"))
+        }
     }
 
     @Test

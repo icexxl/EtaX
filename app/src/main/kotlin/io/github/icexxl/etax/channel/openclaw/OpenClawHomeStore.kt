@@ -75,8 +75,13 @@ internal class OpenClawHomeStore(
     private var sessionsJob: Job? = null
     private var appForeground = true
     private var pendingOpenSession: String? = null
+    private var connection = settings.load()
+    private var generation = 0L
+    private var sessionsRequest = 0L
     /** 本地新建、服务端尚未出现的会话 key。 */
     private val locallyCreated = mutableSetOf<String>()
+    private data class UploadRetry(val mime: String, val bytes: ByteArray)
+    private val failedUploads = mutableMapOf<String, UploadRetry>()
 
     /** 上次加载 agent 列表时的可见性签名，用于检测设置页的勾选变化。 */
     private var visibleSignature: String? = null
@@ -94,10 +99,13 @@ internal class OpenClawHomeStore(
                 ?.groupValues?.getOrNull(1)
                 ?: ""
             val restoredAgent = settings.lastAgentId().ifBlank { agentFromSession }
-            if (restoredAgent.isNotBlank() || restoredSession.isNotBlank()) {
+            val matchingSession = restoredSession.takeIf {
+                agentFromSession.isNotBlank() && agentFromSession == restoredAgent
+            }
+            if (restoredAgent.isNotBlank() || matchingSession != null) {
                 _state.value = _state.value.copy(
                     currentAgentId = restoredAgent,
-                    currentSessionKey = restoredSession.ifBlank { null },
+                    currentSessionKey = matchingSession,
                 )
             }
         }
@@ -115,10 +123,12 @@ internal class OpenClawHomeStore(
             hasMoreHistory = false,
             isLoadingMoreHistory = false,
         )
+        val requestGeneration = generation
+        val config = config()
         activeScope.launch {
-            client.history(config(), sessionKey, HISTORY_LIMIT).fold(
+            client.history(config, sessionKey, HISTORY_LIMIT).fold(
                 onSuccess = { response ->
-                    if (_state.value.currentSessionKey != sessionKey) return@fold
+                    if (requestGeneration != generation || _state.value.currentSessionKey != sessionKey) return@fold
                     val loaded = response.messages.mapNotNull { it.toMessage() }
                         .map { it.copy(conversationId = sessionKey) }
                     historyCursor = response.nextBefore
@@ -130,7 +140,7 @@ internal class OpenClawHomeStore(
                     )
                 },
                 onFailure = { failure ->
-                    if (_state.value.currentSessionKey != sessionKey) return@fold
+                    if (requestGeneration != generation || _state.value.currentSessionKey != sessionKey) return@fold
                     _state.value = _state.value.copy(
                         isLoadingHistory = false,
                         hasMoreHistory = false,
@@ -146,6 +156,7 @@ internal class OpenClawHomeStore(
      * 并强制刷新 agent / 会话 / 当前会话历史，避免长时间后台后画面空白。
      */
     fun onAppResumed() {
+        syncConnection()
         appForeground = true
         pollFailures = 0
         // 休眠或切换网络后连接池里的旧 socket 往往已经失效，先清掉
@@ -166,11 +177,13 @@ internal class OpenClawHomeStore(
 
     fun saveConfig(config: OpenClawConfig) {
         settings.save(config)
+        syncConnection()
         _state.value = _state.value.copy(error = null)
     }
 
     /** 首次进入 OpenClaw 模式时调用。 */
     fun start() {
+        syncConnection()
         val activeScope = scope ?: return
         val config = config()
         if (!config.isConfigured) {
@@ -186,12 +199,15 @@ internal class OpenClawHomeStore(
 
     /** 自检：立刻拉取一次（不等长轮询）。 */
     fun checkNow() {
+        syncConnection()
         val activeScope = scope ?: return
         val config = config()
         if (!config.isConfigured) return
+        val requestGeneration = generation
         activeScope.launch {
             client.pull(config, lastSeq, 0).fold(
                 onSuccess = { response ->
+                    if (requestGeneration != generation) return@fold
                     pollFailures = 0
                     if (_state.value.error?.startsWith("OpenClaw 连接中断") == true) {
                         _state.value = _state.value.copy(error = null)
@@ -206,6 +222,7 @@ internal class OpenClawHomeStore(
 
     /** 设置页保存后强制重新拉取 agent（同一 Activity 内导航不会触发 ON_START）。 */
     fun reloadAgents() {
+        syncConnection()
         visibleSignature = null
         loadAgents()
     }
@@ -218,13 +235,16 @@ internal class OpenClawHomeStore(
     }
 
     private fun loadAgents() {
+        syncConnection()
         val activeScope = scope ?: return
         _state.value = _state.value.copy(isLoadingAgents = true, error = null)
         visibleSignature = settings.visibleAgentIds().sorted().joinToString(",")
         val config = config()
+        val requestGeneration = generation
         activeScope.launch {
             client.agents(config).fold(
                 onSuccess = { response ->
+                    if (requestGeneration != generation) return@fold
                     // 只保留设置页勾选的 agent；没勾选过则显示全部
                     val visible = settings.visibleAgentIds().toSet()
                     val agents = if (visible.isEmpty()) {
@@ -238,15 +258,36 @@ internal class OpenClawHomeStore(
                         else -> response.defaultAgentId.takeIf { it in ids }
                             ?: ids.firstOrNull().orEmpty()
                     }
+                    val agentChanged = _state.value.currentAgentId.isNotBlank() &&
+                        _state.value.currentAgentId != preferred
+                    if (agentChanged) {
+                        settings.saveLastAgentId(preferred)
+                        settings.saveLastSessionKey("")
+                        historyCursor = null
+                        failedUploads.clear()
+                    }
                     _state.value = _state.value.copy(
                         agents = agents,
-                        currentAgentId = preferred.ifBlank { agents.firstOrNull()?.id.orEmpty() },
+                        currentAgentId = preferred,
+                        currentSessionKey = if (agentChanged) null else _state.value.currentSessionKey,
+                        sessions = if (agentChanged) emptyList() else _state.value.sessions,
+                        messages = if (agentChanged) emptyList() else _state.value.messages,
+                        isLoadingHistory = if (agentChanged) false else _state.value.isLoadingHistory,
                         isLoadingAgents = false,
                     )
+                    pendingOpenSession?.let { pending ->
+                        val target = agentOf(pending)
+                        if (target in ids && target != _state.value.currentAgentId) {
+                            selectAgent(target)
+                            ensureJobs()
+                            return@fold
+                        }
+                    }
                     loadSessions()
                     ensureJobs()
                 },
                 onFailure = { failure ->
+                    if (requestGeneration != generation) return@fold
                     _state.value = _state.value.copy(
                         isLoadingAgents = false,
                         // 已有列表时保持原样，避免后台恢复瞬间的抖动弹出一整条错误
@@ -277,11 +318,14 @@ internal class OpenClawHomeStore(
 
     /** 从通知点击进入指定会话。 */
     fun openSession(sessionKey: String) {
-        val agentId = Regex("^agent:([^:]+):").find(sessionKey)?.groupValues?.getOrNull(1)
-            ?: return
+        syncConnection()
+        val agentId = agentOf(sessionKey).takeIf { it.isNotBlank() } ?: return
         pendingOpenSession = sessionKey
         when {
-            _state.value.agents.isEmpty() -> start()
+            _state.value.agents.isEmpty() -> {
+                selectAgent(agentId)
+                start()
+            }
             _state.value.currentAgentId != agentId -> selectAgent(agentId)
             else -> {
                 selectSession(sessionKey)
@@ -305,13 +349,25 @@ internal class OpenClawHomeStore(
 
     fun selectAgent(agentId: String) {
         if (agentId.isBlank() || agentId == _state.value.currentAgentId) return
+        if (pendingOpenSession != null && agentOf(pendingOpenSession.orEmpty()) != agentId) {
+            pendingOpenSession = null
+        }
+        generation++
+        sessionsRequest++
         historyCursor = null
+        failedUploads.clear()
         settings.saveLastAgentId(agentId)
+        settings.saveLastSessionKey("")
         _state.value = _state.value.copy(
             currentAgentId = agentId,
             sessions = emptyList(),
             currentSessionKey = null,
             messages = emptyList(),
+            isLoadingHistory = false,
+            isLoadingSessions = false,
+            currentSessionDeleted = false,
+            sending = false,
+            running = false,
             hasMoreHistory = false,
             isLoadingMoreHistory = false,
             error = null,
@@ -323,16 +379,19 @@ internal class OpenClawHomeStore(
     fun setShowArchived(show: Boolean) {
         if (show == _state.value.showArchived) return
         settings.saveShowArchivedSessions(show)
+        sessionsRequest++
         _state.value = _state.value.copy(showArchived = show, sessions = emptyList())
         loadSessions()
     }
 
     fun selectSession(sessionKey: String) {
+        pendingOpenSession = null
         if (sessionKey == _state.value.currentSessionKey) return
         markSeen(sessionKey)
         // P1-9：进入会话即清掉该会话的通知
         runCatching { notifier?.clear(sessionKey) }
         settings.saveLastSessionKey(sessionKey)
+        failedUploads.clear()
         historyCursor = null
         _state.value = _state.value.copy(
             currentSessionKey = sessionKey,
@@ -354,10 +413,12 @@ internal class OpenClawHomeStore(
         if (_state.value.isLoadingMoreHistory || !_state.value.hasMoreHistory) return
         val activeScope = scope ?: return
         _state.value = _state.value.copy(isLoadingMoreHistory = true, error = null)
+        val requestGeneration = generation
+        val config = config()
         activeScope.launch {
-            client.history(config(), sessionKey, HISTORY_LIMIT, cursor).fold(
+            client.history(config, sessionKey, HISTORY_LIMIT, cursor).fold(
                 onSuccess = { response ->
-                    if (_state.value.currentSessionKey != sessionKey) return@fold
+                    if (requestGeneration != generation || _state.value.currentSessionKey != sessionKey) return@fold
                     val loaded = response.messages.mapNotNull { it.toMessage() }
                         .map { it.copy(conversationId = sessionKey) }
                     historyCursor = response.nextBefore
@@ -368,7 +429,7 @@ internal class OpenClawHomeStore(
                     )
                 },
                 onFailure = { failure ->
-                    if (_state.value.currentSessionKey != sessionKey) return@fold
+                    if (requestGeneration != generation || _state.value.currentSessionKey != sessionKey) return@fold
                     _state.value = _state.value.copy(
                         isLoadingMoreHistory = false,
                         error = failure.message ?: "加载更早的消息失败",
@@ -392,6 +453,7 @@ internal class OpenClawHomeStore(
             hasActiveRun = false,
         )
         markSeen(key)
+        settings.saveLastSessionKey(key)
         historyCursor = null
         _state.value = _state.value.copy(
             currentSessionKey = key,
@@ -413,7 +475,7 @@ internal class OpenClawHomeStore(
             _state.value = _state.value.copy(error = "请先在设置里填写 Gateway 地址与 Token")
             return
         }
-        val activeScope = scope ?: return
+        if (scope == null || _state.value.sending) return
         val localId = "local-" + UUID.randomUUID()
         appendMessages(
             listOf(
@@ -423,15 +485,28 @@ internal class OpenClawHomeStore(
                     role = OpenClawMessage.Role.USER,
                     text = body,
                     timestamp = System.currentTimeMillis(),
+                    pending = true,
                 ),
             ),
         )
+        sendOptimistic(sessionKey, localId, body, config)
+    }
+
+    private fun sendOptimistic(sessionKey: String, localId: String, body: String, config: OpenClawConfig) {
+        val activeScope = scope ?: return
+        val requestGeneration = generation
         runningSince = System.currentTimeMillis()
-        _state.value = _state.value.copy(sending = true, running = true)
+        _state.value = _state.value.copy(sending = true, running = true, error = null)
         activeScope.launch {
             client.postInbound(config.copy(conversationId = sessionKey), body, localId).fold(
-                onSuccess = { _state.value = _state.value.copy(sending = false) },
+                onSuccess = {
+                    if (requestGeneration != generation || _state.value.currentSessionKey != sessionKey) return@fold
+                    updateOptimistic(localId, failed = false)
+                    _state.value = _state.value.copy(sending = false)
+                },
                 onFailure = { failure ->
+                    if (requestGeneration != generation || _state.value.currentSessionKey != sessionKey) return@fold
+                    updateOptimistic(localId, failed = true)
                     runningSince = 0L
                     _state.value = _state.value.copy(
                         sending = false,
@@ -451,25 +526,44 @@ internal class OpenClawHomeStore(
             _state.value = _state.value.copy(error = "请先在设置里填写 Gateway 地址与 Token")
             return
         }
-        val activeScope = scope ?: return
+        if (scope == null || _state.value.sending) return
+        val localId = "local-up-" + UUID.randomUUID()
         appendMessages(
             listOf(
                 OpenClawMessage(
-                    id = "local-up-" + java.util.UUID.randomUUID(),
+                    id = localId,
                     conversationId = sessionKey,
                     role = OpenClawMessage.Role.USER,
                     text = caption,
                     timestamp = System.currentTimeMillis(),
                     mediaName = name,
+                    pending = true,
                 ),
             ),
         )
+        uploadOptimistic(sessionKey, localId, name, mime, bytes, caption, config)
+    }
+
+    private fun uploadOptimistic(
+        sessionKey: String, localId: String, name: String, mime: String,
+        bytes: ByteArray, caption: String, config: OpenClawConfig,
+    ) {
+        val activeScope = scope ?: return
+        val requestGeneration = generation
         runningSince = System.currentTimeMillis()
         _state.value = _state.value.copy(sending = true, running = true, error = null)
         activeScope.launch {
             client.uploadMedia(config.copy(conversationId = sessionKey), name, mime, caption, bytes).fold(
-                onSuccess = { _state.value = _state.value.copy(sending = false) },
+                onSuccess = {
+                    if (requestGeneration != generation || _state.value.currentSessionKey != sessionKey) return@fold
+                    failedUploads.remove(localId)
+                    updateOptimistic(localId, failed = false)
+                    _state.value = _state.value.copy(sending = false)
+                },
                 onFailure = { failure ->
+                    if (requestGeneration != generation || _state.value.currentSessionKey != sessionKey) return@fold
+                    failedUploads[localId] = UploadRetry(mime, bytes)
+                    updateOptimistic(localId, failed = true)
                     runningSince = 0L
                     _state.value = _state.value.copy(
                         sending = false,
@@ -481,11 +575,61 @@ internal class OpenClawHomeStore(
         }
     }
 
+    fun retryMessage(localId: String) {
+        if (_state.value.sending) return
+        val message = _state.value.messages.firstOrNull {
+            it.id == localId && it.failed && it.conversationId == _state.value.currentSessionKey
+        } ?: return
+        val config = config()
+        if (!config.isConfigured) return
+        updateOptimistic(localId, failed = false, pending = true)
+        val upload = failedUploads[localId]
+        if (upload != null) {
+            uploadOptimistic(message.conversationId, localId, message.mediaName.orEmpty(),
+                upload.mime, upload.bytes, message.text, config)
+        } else {
+            sendOptimistic(message.conversationId, localId, message.text, config)
+        }
+    }
+
+    private fun updateOptimistic(localId: String, failed: Boolean, pending: Boolean = false) {
+        _state.value = _state.value.copy(messages = _state.value.messages.map {
+            if (it.id == localId) it.copy(failed = failed, pending = pending) else it
+        })
+    }
+
     fun clearError() {
         _state.value = _state.value.copy(error = null)
     }
 
     // ── 内部 ────────────────────────────────────────────────────────────────
+
+    private fun agentOf(sessionKey: String): String =
+        Regex("^agent:([^:]+):").find(sessionKey)?.groupValues?.getOrNull(1).orEmpty()
+
+    private fun syncConnection() {
+        val current = settings.load()
+        if (connection.normalizedBaseUrl() == current.normalizedBaseUrl() &&
+            connection.token == current.token
+        ) return
+        connection = current
+        generation++
+        sessionsRequest++
+        messagePollJob?.cancel()
+        messagePollJob = null
+        lastSeq = settings.lastSeq()
+        lastSeenAt.clear()
+        lastSeenAt.putAll(settings.loadLastSeenAt())
+        primed = false
+        pollFailures = 0
+        runningSince = 0L
+        historyCursor = null
+        locallyCreated.clear()
+        failedUploads.clear()
+        pendingOpenSession = null
+        visibleSignature = null
+        _state.value = UiState(showArchived = settings.showArchivedSessions())
+    }
 
     private fun ensureJobs() {
         if (!pollingEnabled) return
@@ -504,14 +648,22 @@ internal class OpenClawHomeStore(
     }
 
     private fun loadSessions() {
+        syncConnection()
         val activeScope = scope ?: return
         val agentId = _state.value.currentAgentId
         if (agentId.isBlank()) return
         val includeArchived = _state.value.showArchived
+        val config = config()
+        val requestGeneration = generation
+        val request = ++sessionsRequest
         activeScope.launch {
+            if (requestGeneration != generation || request != sessionsRequest) return@launch
             _state.value = _state.value.copy(isLoadingSessions = true)
-            client.sessions(config(), agentId, includeArchived).fold(
+            client.sessions(config, agentId, includeArchived).fold(
                 onSuccess = { response ->
+                    if (requestGeneration != generation || request != sessionsRequest ||
+                        agentId != _state.value.currentAgentId || includeArchived != _state.value.showArchived
+                    ) return@fold
                     val current = _state.value.currentSessionKey
                     var sessions = response.sessions
                     // 过滤开关关闭时，仍保留正在查看的归档会话，避免切换到「已删除」提示。
@@ -544,11 +696,15 @@ internal class OpenClawHomeStore(
                             unread.add(session.sessionKey)
                         }
                     }
-                    unread.removeAll { key -> sessions.none { it.sessionKey == key } }
-                    // 只保留当前仍存在的会话，避免已删会话的已读时间无限增长。
+                    unread.removeAll { key ->
+                        agentOf(key) == agentId && sessions.none { it.sessionKey == key }
+                    }
+                    // 只清理本次拉取的 agent；其他 agent 的已读基线仍需保留。
                     val keep = sessions.mapTo(mutableSetOf()) { it.sessionKey }
                     if (current != null) keep.add(current)
-                    lastSeenChanged = lastSeenAt.keys.retainAll(keep) || lastSeenChanged
+                    lastSeenChanged = lastSeenAt.keys.removeAll { key ->
+                        agentOf(key) == agentId && key !in keep
+                    } || lastSeenChanged
                     if (lastSeenChanged) persistLastSeen()
                     _state.value = _state.value.copy(
                         sessions = sessions,
@@ -563,6 +719,9 @@ internal class OpenClawHomeStore(
                     }
                 },
                 onFailure = { failure ->
+                    if (requestGeneration != generation || request != sessionsRequest ||
+                        agentId != _state.value.currentAgentId || includeArchived != _state.value.showArchived
+                    ) return@fold
                     _state.value = _state.value.copy(
                         isLoadingSessions = false,
                         error = if (_state.value.sessions.isEmpty()) {
@@ -580,13 +739,16 @@ internal class OpenClawHomeStore(
         val activeScope = scope ?: return
         while (activeScope.isActive) {
             try {
+            syncConnection()
             val config = config()
+            val requestGeneration = generation
             if (!config.isConfigured) {
                 delay(2_000)
                 continue
             }
             client.pull(config, lastSeq, if (appForeground) MESSAGE_POLL_MS else MESSAGE_POLL_BG_MS).fold(
                 onSuccess = { response ->
+                    if (requestGeneration != generation) return@fold
                     val records = response.records
                     if (!primed) {
                         primed = true
@@ -613,6 +775,7 @@ internal class OpenClawHomeStore(
                     }
                 },
                 onFailure = {
+                    if (requestGeneration != generation) return@fold
                     pollFailures += 1
                     if (pollFailures >= 3) {
                         _state.value = _state.value.copy(error = "OpenClaw 连接中断，正在重试…")

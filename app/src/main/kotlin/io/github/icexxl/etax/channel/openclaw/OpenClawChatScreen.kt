@@ -242,7 +242,7 @@ internal fun OpenClawChatScreen(
                         textAlign = TextAlign.Center,
                     )
                 }
-                ChatBubble(message)
+                ChatBubble(message, onRetry = { store.retryMessage(message.id) })
             }
         }
 
@@ -553,7 +553,7 @@ private fun NoticeLine(text: String) {
 }
 
 @Composable
-private fun ChatBubble(message: OpenClawMessage) {
+private fun ChatBubble(message: OpenClawMessage, onRetry: () -> Unit) {
     val textStyle = MiuixTheme.textStyles.body1.copy(
         color = MiuixTheme.colorScheme.onSurface,
         lineHeight = 22.sp,
@@ -593,14 +593,28 @@ private fun ChatBubble(message: OpenClawMessage) {
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (!message.mediaUrl.isNullOrBlank()) MediaAttachment(message)
-                    if (message.text.isNotBlank()) {
-                    SelectionContainer {
-                        androidx.compose.foundation.text.BasicText(
-                            text = message.text,
-                            style = textStyle,
-                        )
+                    if (message.mediaName != null && message.mediaUrl == null) {
+                        Text(text = message.mediaName, fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurface)
                     }
-                }
+                    if (message.text.isNotBlank()) {
+                        SelectionContainer {
+                            androidx.compose.foundation.text.BasicText(
+                                text = message.text,
+                                style = textStyle,
+                            )
+                        }
+                    }
+                    if (message.failed) {
+                        Text(
+                            text = "发送失败 · 点击重试",
+                            fontSize = 11.sp,
+                            color = MiuixTheme.colorScheme.error,
+                            modifier = Modifier.clickable(onClick = onRetry),
+                        )
+                    } else if (message.pending) {
+                        Text(text = "发送中…", fontSize = 11.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                    }
                 }
             }
         }

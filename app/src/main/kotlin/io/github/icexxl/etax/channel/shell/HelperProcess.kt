@@ -9,6 +9,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.Process
 import android.util.Log
+import java.io.File
 
 /**
  * 助手进程入口（派生自 Mika 的 HelperProcess / HelperHandoff，Apache-2.0，已裁剪）。
@@ -22,8 +23,15 @@ import android.util.Log
 object HelperProcess {
     private const val TAG = "EtaHelper"
 
+    /** 诊断输出：app_process 没有 logcat 之外的可见渠道，直接写 stdout 供 App 侧读取。 */
+    private fun say(message: String) {
+        println("[$TAG] $message")
+        System.out.flush()
+    }
+
     @JvmStatic
     fun main(args: Array<String>) {
+        say("start args=${args.size}")
         if (args.size < 4) {
             Log.e(TAG, "usage: HelperProcess <package> <uid> <cert-sha256> <apk> (nonce on stdin)")
             System.exit(2)
@@ -46,10 +54,19 @@ object HelperProcess {
         }
 
         Looper.prepareMainLooper()
-        val service = EtaShellService(allowedUid = appUid)
+        say("uid=${Process.myUid()} apk=$apkPath")
+        val service = runCatching { EtaShellService(allowedUid = appUid) }
+            .onFailure { say("service init failed: ${it.javaClass.simpleName}: ${it.message}") }
+            .getOrElse {
+                // 初始化就失败时直接退出，让 App 侧看到原因
+                System.out.flush()
+                System.exit(5)
+                return
+            }
         // 上次静音中被杀、没来得及恢复的，先把声音还回去
         runCatching { service.restoreMuted() }
 
+        say("service ready, handoff to $packageName")
         val helper = Helper(packageName, appUid, certPin, apkPath, nonce, service)
         when (helper.start()) {
             Outcome.Accepted -> {
@@ -97,6 +114,7 @@ object HelperProcess {
                     IBinder::class.java, String::class.java,
                 ).invoke(am, authority, userId, token, TAG)
             } catch (t: Throwable) {
+                say("getContentProviderExternal failed: ${t.javaClass.simpleName}: ${t.message}")
                 Log.w(TAG, "getContentProviderExternal failed", t)
                 return Outcome.Failed
             } ?: return Outcome.Failed
@@ -126,6 +144,7 @@ object HelperProcess {
                     provider, caller, authority, METHOD_ATTACH, null, extras,
                 ) as Bundle?
                 if (result?.getString(HelperHandoff.KEY_RESULT) != HelperHandoff.RESULT_OK) {
+                    say("handoff rejected: ${result?.getString(HelperHandoff.KEY_REASON)}")
                     Log.w(TAG, "handoff rejected: ${result?.getString(HelperHandoff.KEY_REASON)}")
                     return Outcome.Rejected
                 }
@@ -135,9 +154,11 @@ object HelperProcess {
                 runCatching {
                     appBinder.linkToDeath({ onAppDied(appBinder) }, 0)
                 }.onFailure { onAppDied(appBinder) }
-                Log.i(TAG, "handed off to $packageName")
+                say("handed off to $packageName")
+                    Log.i(TAG, "handed off to $packageName")
                 return Outcome.Accepted
             } catch (t: Throwable) {
+                say("handoff failed: ${t.javaClass.simpleName}: ${t.message}")
                 Log.w(TAG, "handoff failed", t)
                 return Outcome.Failed
             } finally {
@@ -158,14 +179,36 @@ object HelperProcess {
             Log.i(TAG, "$packageName died; waiting for it to come back")
         }
 
-        /** 之前起的或残留的助手实例都该走了：只认进程名完全相同的同 uid 进程。 */
+        /**
+         * 清掉之前残留的助手实例。
+         *
+         * 只认真正的 `app_process` 助手进程：
+         * - 排除自己（PID 数字比较）和自己的父进程；
+         * - 排除 adbd 那层 `sh -c "… app_process …"` 包装进程。
+         *
+         * 最后这条曾经踩坑：包装进程的命令行里同样含助手类名，被一起杀掉后，
+         * 助手作为它的子进程收到 SIGHUP，交接刚成功就消失（日志上看起来“连上又断开”，且没有崩溃记录）。
+         */
         fun killOtherInstances() {
             runCatching {
                 val myPid = Process.myPid()
-                ProcessBuilder("sh", "-c", "ps -A -o PID,ARGS | grep -F '$COMPONENT' | grep -v ' $myPid ' | awk '{print \$1}'")
-                    .redirectErrorStream(true).start().inputStream.bufferedReader().readLines()
-                    .mapNotNull { it.trim().toIntOrNull() }
-                    .forEach { pid -> runCatching { Process.killProcess(pid) } }
+                val parentPid = runCatching {
+                    File("/proc/self/stat").readText().split(' ')
+                        .getOrNull(3)?.toIntOrNull()
+                }.getOrNull()
+                val output = ProcessBuilder(
+                    "sh", "-c", "ps -A -o PID,ARGS | grep -F '$COMPONENT' || true",
+                ).redirectErrorStream(true).start().inputStream.bufferedReader().readText()
+                output.lineSequence().forEach { line ->
+                    val trimmed = line.trim()
+                    val pid = trimmed.substringBefore(' ').toIntOrNull() ?: return@forEach
+                    if (pid <= 0 || pid == myPid || pid == parentPid) return@forEach
+                    // app_process 启动后会把进程名改成类名，所以按类名匹配；
+                    // 但必须排除 adbd 的 `sh -c` 包装层（它的命令行里同样含类名）和 grep 自身。
+                    if (!trimmed.contains(COMPONENT)) return@forEach
+                    if (trimmed.contains(" sh -c ") || trimmed.contains("grep ")) return@forEach
+                    runCatching { Process.killProcess(pid) }
+                }
             }.onFailure { Log.w(TAG, "killOtherInstances failed", it) }
         }
     }

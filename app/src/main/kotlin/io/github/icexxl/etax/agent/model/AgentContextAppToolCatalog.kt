@@ -126,6 +126,14 @@ internal object AgentContextAppToolCatalog {
                                         .put("type", "string")
                                         .put("description", "确定有效、可由系统处理的 URI")
                                 )
+                                .put(
+                                    "display",
+                                    JSONObject()
+                                        .put("type", "string")
+                                        .put("enum", JSONArray().put("auto").put("virtual").put("main"))
+                                        .put("default", "auto")
+                                        .put("description", "auto 默认自动选择；main 按用户要求打开在眼前主屏；virtual 在后台虚拟屏")
+                                )
                         )
                         .put("required", JSONArray().put("uri"))
                 )

@@ -49,9 +49,6 @@ import org.lsposed.hiddenapibypass.HiddenApiBypass
  */
 internal object VirtualDisplayController {
 
-    /** 在主屏任务列表里最多走几个任务去找目标包。 */
-    private const val MAX_WALK_TASKS = 8
-
     private val lock = Any()
     private val mutableSnapshots = MutableStateFlow(VirtualDisplaySnapshot.Inactive)
     val snapshots: StateFlow<VirtualDisplaySnapshot> = mutableSnapshots.asStateFlow()
@@ -69,6 +66,9 @@ internal object VirtualDisplayController {
     private var rootBridgeProcess: Process? = null
     /** 经 shell 助手创建的屏号（释放时要交回给助手）。 */
     private var shellDisplayId: Int = Display.INVALID_DISPLAY
+    /** 接管时的确切任务，禁止按主屏最上层任务猜测回程目标。 */
+    private var handedOverTaskId: Int = -1
+    private var handedOverDisplayId: Int = Display.INVALID_DISPLAY
     /** 建屏时记下的 Application context：注入回调里没有 context 参数。 */
     @Volatile
     private var appContextOrNull: Context? = null
@@ -105,6 +105,30 @@ internal object VirtualDisplayController {
         activeDisplayId.takeIf { CanvasRoutingPolicy.isVirtualDisplay(it) } ?: Display.DEFAULT_DISPLAY
     }
 
+    fun isShellDisplay(displayId: Int): Boolean = synchronized(lock) {
+        CanvasRoutingPolicy.isVirtualDisplay(displayId) && shellDisplayId == displayId &&
+            mutableSnapshots.value.active
+    }
+
+    private fun shellDisplayAlive(context: Context, displayId: Int): Boolean =
+        shellDisplayId != displayId || runCatching {
+            val shell = io.github.icexxl.etax.channel.shell.EtaShellConnection.shell(context) ?: return@runCatching false
+            shell.identity().size == 2 && context.getSystemService(DisplayManager::class.java)
+                ?.getDisplay(displayId) != null
+        }.getOrDefault(false)
+
+    /** Only inject into a display owned by the shell helper, never the physical display. */
+    fun injectShellKey(displayId: Int, keyCode: Int): Boolean {
+        val context = appContextOrNull ?: return false
+        if (!CanvasRoutingPolicy.isVirtualDisplay(displayId) ||
+            synchronized(lock) { shellDisplayId != displayId || !mutableSnapshots.value.active }
+        ) return false
+        return runCatching {
+            io.github.icexxl.etax.channel.shell.EtaShellConnection.shell(context)
+                ?.injectKey(displayId, keyCode) == true
+        }.getOrDefault(false)
+    }
+
     /**
      * 确保受信任虚拟屏已就绪并返回其 displayId；不可用时返回 null，由调用方平滑回退至物理主屏。
      */
@@ -112,16 +136,13 @@ internal object VirtualDisplayController {
         context: Context,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
     ): Int? {
-        synchronized(lock) {
-            if (CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId) && imageReader != null) {
-                return activeDisplayId
-            }
-        }
         val appContext = context.applicationContext
         appContextOrNull = appContext
         val (width, height, densityDpi) = resolvePhysicalDisplayMetrics(appContext)
         synchronized(lock) {
-            if (CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId) && imageReader != null) {
+            if (CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId) && imageReader != null &&
+                shellDisplayAlive(appContext, activeDisplayId)
+            ) {
                 return activeDisplayId
             }
             releaseLocked(appContext, rootAvailable)
@@ -233,7 +254,11 @@ internal object VirtualDisplayController {
             false
         }
 
-        if (!startedInProcess || rootAvailable()) {
+        val startedViaShell = if (!startedInProcess && shellDisplayId == displayId) {
+            val shell = io.github.icexxl.etax.channel.shell.EtaShellConnection.shell(appContext)
+            runCatching { shell?.startApp(displayId, packageName) == 0 }.getOrDefault(false)
+        } else false
+        if (!startedInProcess && !startedViaShell || rootAvailable()) {
             // Root 下补发一次指定 displayId 的 am start，确保后台启动限制或跨屏栈迁移生效
             if (rootAvailable()) {
                 val userId = DeviceToolContract.appUserId(appContext)
@@ -252,7 +277,7 @@ internal object VirtualDisplayController {
                         exec.close()
                     }
                 }
-            } else if (!startedInProcess) {
+            } else if (!startedInProcess && !startedViaShell) {
                 return null
             }
         }
@@ -348,6 +373,14 @@ internal object VirtualDisplayController {
             rootAvailable = rootAvailable,
         )
 
+        if (!moved) {
+            synchronized(lock) {
+                if (mutableSnapshots.value.displayId == snapshot.displayId) {
+                    mutableSnapshots.value = mutableSnapshots.value.copy(materializingToMain = false)
+                }
+            }
+            return false
+        }
         // 留出 260ms 让 VirtualDisplayMaterializeOverlay 完成从画板到物理全屏的弹簧贴合动画
         try {
             Thread.sleep(260L)
@@ -356,7 +389,7 @@ internal object VirtualDisplayController {
         }
 
         release(appContext, rootAvailable)
-        return moved
+        return true
     }
 
     /**
@@ -376,12 +409,15 @@ internal object VirtualDisplayController {
             if (taskId <= 0) return false
             val moved = shell.moveTask(taskId, Display.DEFAULT_DISPLAY)
             if (moved) {
+                // 只记录确切的任务 ID；主屏随后切到其他应用时也不能误挪用户当前任务。
+                synchronized(lock) {
+                    handedOverTaskId = taskId
+                    handedOverDisplayId = snapshot.displayId
+                    mutableSnapshots.value = mutableSnapshots.value.copy(userControlling = true)
+                }
                 // 交给用户时恢复声音，不然用户听不到提示
                 snapshot.packageName.takeIf { it.isNotBlank() }?.let { pkg ->
                     runCatching { shell.setAudioMuted(pkg, false) }
-                }
-                synchronized(lock) {
-                    mutableSnapshots.value = mutableSnapshots.value.copy(userControlling = true)
                 }
             }
             moved
@@ -392,40 +428,28 @@ internal object VirtualDisplayController {
     fun takeBackTaskFromUser(context: Context): Boolean {
         val snapshot = synchronized(lock) { mutableSnapshots.value }
         if (!snapshot.active || !CanvasRoutingPolicy.isVirtualDisplay(snapshot.displayId)) return false
+        val taskId = synchronized(lock) {
+            handedOverTaskId.takeIf { it > 0 && handedOverDisplayId == snapshot.displayId }
+        } ?: return false
         val shell = io.github.icexxl.etax.channel.shell.EtaShellConnection.shell(context.applicationContext)
             ?: return false
         return runCatching {
-            val pkg = snapshot.packageName
-            val taskId = findTaskOnDisplay(shell, Display.DEFAULT_DISPLAY, pkg)
-            if (taskId <= 0) return false
+            // 不依赖当前前台应用，也不根据包名猜测；原任务不在主屏就拒绝挪移。
+            if (shell.displayOfTask(taskId) != Display.DEFAULT_DISPLAY) return false
             val moved = shell.moveTask(taskId, snapshot.displayId)
             if (moved) {
-                if (pkg.isNotBlank()) runCatching { shell.setAudioMuted(pkg, true) }
                 synchronized(lock) {
+                    handedOverTaskId = -1
+                    handedOverDisplayId = Display.INVALID_DISPLAY
                     mutableSnapshots.value = mutableSnapshots.value.copy(userControlling = false)
+                }
+                snapshot.packageName.takeIf { it.isNotBlank() }?.let { pkg ->
+                    runCatching { shell.setAudioMuted(pkg, true) }
                 }
             }
             moved
         }.getOrDefault(false)
     }
-
-    /** 在主屏任务里找属于 [packageName] 的那个；[packageName] 为空时取主屏最上面的。 */
-    private fun findTaskOnDisplay(
-        shell: io.github.icexxl.etax.shell.IEtaShell,
-        displayId: Int,
-        packageName: String,
-    ): Int = runCatching {
-        if (packageName.isBlank()) return shell.topTaskId(displayId)
-        // 逐个任务问所属包，命中即返回
-        var taskId = shell.topTaskId(displayId)
-        var guard = 0
-        while (taskId > 0 && guard < MAX_WALK_TASKS) {
-            if (shell.packageOfTask(taskId) == packageName) return taskId
-            // 没有“上一个任务”的接口，退化为只查最上面那个
-            break
-        }
-        -1
-    }.getOrDefault(-1)
 
     /** 没有 shell 助手时（有 Root）退回原来的整屏移交路径。 */
     private fun handOffViaRoot(
@@ -433,7 +457,6 @@ internal object VirtualDisplayController {
         snapshot: VirtualDisplaySnapshot,
     ): Boolean = runCatching {
         handoffToMainDisplay(context)
-        true
     }.getOrDefault(false)
 
     /**
@@ -600,6 +623,8 @@ internal object VirtualDisplayController {
     ) {
         highFrequencyPreview = false
         activeDisplayId = Display.DEFAULT_DISPLAY
+        handedOverTaskId = -1
+        handedOverDisplayId = Display.INVALID_DISPLAY
         mutableSnapshots.value = VirtualDisplaySnapshot.Inactive
 
         if (context != null && mutedPackages.isNotEmpty()) {

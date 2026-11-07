@@ -22,6 +22,14 @@ class AgentToolRequirementsTest {
     }
 
     @Test
+    fun openUriSupportsExplicitDisplayWithoutChangingDefault() {
+        val properties = catalog(root = false).properties("open_uri")
+        val display = properties.getJSONObject("display")
+        assertEquals("auto", display.getString("default"))
+        assertEquals("[\"auto\",\"virtual\",\"main\"]", display.getJSONArray("enum").toString())
+    }
+
+    @Test
     fun ordinaryCatalogDoesNotExposeCharacterMemoryTools() {
         assertTrue(catalog(root = true).names().none { it in CharacterMemoryTools.NAMES })
     }

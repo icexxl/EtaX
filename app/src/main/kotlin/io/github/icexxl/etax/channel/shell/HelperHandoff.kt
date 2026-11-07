@@ -31,9 +31,14 @@ internal object HelperHandoff {
     /** 由 APK 路径、包名、目标 uid、证书指纹拼出 app_process 启动命令。 */
     fun command(apkPath: String, packageName: String, appUid: Int, certPin: String): String =
         "CLASSPATH=${quote(apkPath)} app_process /system/bin " +
-            "${HelperProcess::class.java.name} ${quote(packageName)} $appUid ${quote(certPin)}"
+            "${HelperProcess::class.java.name} ${quote(packageName)} $appUid ${quote(certPin)} ${quote(apkPath)} 2>&1"
 
     fun stdinLine(nonce: String): ByteArray = "$nonce\n".toByteArray(Charsets.UTF_8)
+
+    /** Never target a PID unless the live helper still identifies as the shell user. */
+    fun shellPid(identity: IntArray?): Int? = identity
+        ?.takeIf { it.size == 2 && it[0] == SHELL_UID && it[1] > 0 }
+        ?.get(1)
 
     /** 交接前的静态校验；返回 null 表示通过。 */
     fun check(

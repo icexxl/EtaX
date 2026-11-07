@@ -7,7 +7,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.display.VirtualDisplay
 import android.os.Build
+import android.os.Binder
 import android.os.Bundle
+import android.os.Parcel
 import android.os.IBinder
 import android.os.Looper
 import android.os.Process
@@ -41,6 +43,13 @@ internal class EtaShellService(
     private val displays = HashMap<Int, VirtualDisplay>()
     // 静音记录放在 shell 身份能写的目录：助手重启后据此把声音还回去
     private val muteLedger = AudioMuteLedger(File("/data/local/tmp", "etax_audio_mute_$allowedUid"))
+
+    override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+        if (Binder.getCallingUid() != allowedUid) {
+            throw SecurityException("Eta shell helper accepts only EtaX UID")
+        }
+        return super.onTransact(code, data, reply, flags)
+    }
 
     /** 不能用 getSystemService：那样拿到的 DisplayManager 绑的是系统上下文，包名与 shell uid 对不上。 */
     @Suppress("PrivateApi", "DiscouragedPrivateApi")
@@ -251,13 +260,16 @@ internal class EtaShellService(
         if (!VALID_PACKAGE.matches(packageName)) {
             false
         } else if (muted) {
-            // 先记下原模式再改，读不到原值就不动它
-            if (!muteLedger.contains(packageName)) {
-                audioMode(packageName)?.let { muteLedger.put(packageName, it) }
-            }
-            appops(packageName, "ignore")
+            // 原始模式读不出来就不改，避免日后无法准确恢复。
+            val prior = muteLedger[packageName]
+                ?: audioMode(packageName)?.also { muteLedger.put(packageName, it) }
+                ?: return false
+            val ok = appops(packageName, "ignore")
+            if (!ok && prior != "ignore") muteLedger.remove(packageName)
+            ok
         } else {
-            val ok = appops(packageName, "allow")
+            val prior = muteLedger[packageName] ?: return true
+            val ok = appops(packageName, AudioMuteLedger.restoreMode(prior))
             if (ok) muteLedger.remove(packageName)
             ok
         }
@@ -293,8 +305,11 @@ internal class EtaShellService(
                 val taskId = TASK_INFO.getField("taskId").getInt(task)
                 when {
                     close?.contains(pkg) == true -> {
-                        moveTask(taskId, Display.DEFAULT_DISPLAY)
-                        closed += "$pkg:closed"
+                        if (removeTask(taskId)) {
+                            closed += "$pkg:closed"
+                        } else {
+                            note = "close failed: $pkg"
+                        }
                     }
                     keep?.contains(pkg) == true -> {
                         // 留到主屏但排在最后，用户不会被突然打断
@@ -316,14 +331,6 @@ internal class EtaShellService(
 
     override fun identity(): IntArray = intArrayOf(Process.myUid(), Process.myPid())
 
-    override fun runSystemCommand(displayId: Int, command: String): Bundle {
-        val (code, out) = sh("/system/bin/sh", "-c", command)
-        return Bundle().apply {
-            putInt("exit_code", code)
-            putString("output", out)
-        }
-    }
-
     // ── 内部工具 ────────────────────────────────────────────────────────
 
     /** 只往本服务自己建的屏上启动，调用方传错屏号（比如主屏）也不会打扰用户。 */
@@ -341,6 +348,13 @@ internal class EtaShellService(
     }
 
     private fun packageInTask(task: Any, packageName: String): Boolean = packageOf(task) == packageName
+
+    private fun removeTask(taskId: Int): Boolean = try {
+        taskManager.javaClass.getMethod("removeTask", Int::class.java).invoke(taskManager, taskId) as Boolean
+    } catch (error: Throwable) {
+        Log.w(TAG, "removeTask failed", error)
+        exec("am", "stack", "remove", "$taskId") == 0
+    }
 
     /** IActivityTaskManager.getTasks：shell 持有 REAL_GET_TASKS，能看到所有应用的任务。 */
     private fun tasksOn(displayId: Int): List<Any> {

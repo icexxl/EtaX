@@ -907,6 +907,10 @@ internal class AgentLocalTools(
             ownPackage = context.packageName,
         )
 
+        if (requestedDisplay == CanvasRoutingPolicy.RequestedDisplay.VIRTUAL &&
+            targetCanvas != CanvasRoutingPolicy.CanvasTarget.VIRTUAL_DISPLAY
+        ) return errorResult("VIRTUAL_DISPLAY_UNAVAILABLE", "当前应用或设备不能使用虚拟屏，未在主屏启动")
+
         val launchedVirtualId = if (targetCanvas == CanvasRoutingPolicy.CanvasTarget.VIRTUAL_DISPLAY) {
             VirtualDisplayController.launchAppOnVirtualDisplay(
                 context = context,
@@ -923,6 +927,9 @@ internal class AgentLocalTools(
             activeDisplayId = launchedVirtualId
             launchedVirtualId
         } else {
+            if (requestedDisplay == CanvasRoutingPolicy.RequestedDisplay.VIRTUAL &&
+                targetCanvas == CanvasRoutingPolicy.CanvasTarget.VIRTUAL_DISPLAY
+            ) return errorResult("VIRTUAL_DISPLAY_UNAVAILABLE", "虚拟屏启动失败，未在主屏打开应用")
             activeDisplayId = Display.DEFAULT_DISPLAY
             context.startActivity(launchIntent)
             Display.DEFAULT_DISPLAY
@@ -951,17 +958,17 @@ internal class AgentLocalTools(
         val wasVirtual = vdSnapshot.active || CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId)
         // 有 shell 助手（免 Root）时只把任务挪到主屏、保留虚拟屏，
         // 用户处理完还能用 take_back_from_user 挪回来继续；别的后端沿用整屏移交。
-        val viaShell = wasVirtual && io.github.icexxl.etax.channel.shell.EtaShellConnection
-            .isConnected(context) &&
-            VirtualDisplayController.handOverTopTaskToUser(context)
+        val shellConnected = wasVirtual &&
+            VirtualDisplayController.isShellDisplay(vdSnapshot.displayId) &&
+            io.github.icexxl.etax.channel.shell.EtaShellConnection.isConnected(context)
         val presented = when {
-            viaShell -> true
+            shellConnected -> VirtualDisplayController.handOverTopTaskToUser(context)
             wasVirtual -> VirtualDisplayController.handoffToMainDisplay(context, rootAvailable)
             else -> true
         }
-        activeDisplayId = Display.DEFAULT_DISPLAY
+        if (presented) activeDisplayId = Display.DEFAULT_DISPLAY
         return JSONObject()
-            .put("ok", true)
+            .put("ok", presented)
             .put("tool", "present_to_user")
             .put("canvas", CanvasRoutingPolicy.CanvasTarget.MAIN_DISPLAY.wireName)
             .put("display_id", Display.DEFAULT_DISPLAY)
@@ -1001,6 +1008,9 @@ internal class AgentLocalTools(
 
     private fun openUri(args: JSONObject): String {
         val uriText = args.optString("uri").trim()
+        val requestedDisplay = CanvasRoutingPolicy.RequestedDisplay.parse(
+            args.optString("display", "auto"),
+        ) ?: return errorResult("INVALID_ARGUMENT", "display 仅支持 auto、virtual 或 main")
         if (uriText.isBlank()) {
             return errorResult("INVALID_ARGUMENT", "uri 不能为空")
         }
@@ -1024,11 +1034,15 @@ internal class AgentLocalTools(
                 shellAvailable = io.github.icexxl.etax.channel.shell.EtaShellConnection
                     .isConnected(requireContext()),
             ),
-            requested = CanvasRoutingPolicy.RequestedDisplay.AUTO,
+            requested = requestedDisplay,
             targetPackage = resolvedPkg,
             foregroundPackageOnMainDisplay = mainForegroundPkg,
             ownPackage = context.packageName,
         )
+        if (requestedDisplay == CanvasRoutingPolicy.RequestedDisplay.VIRTUAL &&
+            targetCanvas != CanvasRoutingPolicy.CanvasTarget.VIRTUAL_DISPLAY
+        ) return errorResult("VIRTUAL_DISPLAY_UNAVAILABLE", "当前链接或设备不能使用虚拟屏，未在主屏打开")
+
         val virtualId = if (targetCanvas == CanvasRoutingPolicy.CanvasTarget.VIRTUAL_DISPLAY) {
             VirtualDisplayController.openUriOnVirtualDisplay(
                 context = context,
@@ -1043,6 +1057,9 @@ internal class AgentLocalTools(
             activeDisplayId = virtualId
             virtualId
         } else {
+            if (requestedDisplay == CanvasRoutingPolicy.RequestedDisplay.VIRTUAL &&
+                targetCanvas == CanvasRoutingPolicy.CanvasTarget.VIRTUAL_DISPLAY
+            ) return errorResult("VIRTUAL_DISPLAY_UNAVAILABLE", "虚拟屏打开链接失败，未在主屏打开")
             activeDisplayId = Display.DEFAULT_DISPLAY
             context.startActivity(intent)
             Display.DEFAULT_DISPLAY

@@ -33,6 +33,4 @@ interface IEtaShell {
     void releaseAll() = 14;
     // 该包在主屏上有看得见的任务时返回 true；看不清时也返回 true(宁可不动)
     boolean visibleOnMainScreen(String packageName) = 15;
-    // 在已建好的这块屏上以 shell 身份跑命令，返回 {exit_code, output}
-    Bundle runSystemCommand(int displayId, String command) = 16;
 }

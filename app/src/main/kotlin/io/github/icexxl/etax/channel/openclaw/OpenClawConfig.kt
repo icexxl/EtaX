@@ -111,11 +111,18 @@ internal class OpenClawSettings(
     }
 
     fun save(config: OpenClawConfig) {
+        val previous = load()
         tokenStore.setToken(config.token)
         prefs.edit {
             putString(KEY_BASE_URL, config.baseUrl.trim())
             putString(KEY_AGENT_ID, config.agentId.trim().ifBlank { "main" })
             putString(KEY_CONVERSATION_ID, config.conversationId.trim().ifBlank { "c_default" })
+            if (previous.normalizedBaseUrl() != config.normalizedBaseUrl() || previous.token != config.token) {
+                remove(KEY_LAST_SEQ)
+                remove(KEY_LAST_AGENT)
+                remove(KEY_LAST_SESSION)
+                remove(KEY_LAST_SEEN_AT)
+            }
         }
     }
 

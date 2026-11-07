@@ -95,6 +95,15 @@ class HelperHandoffTest {
     }
 
     @Test
+    fun onlyShellHelperIdentityCanBeStopped() {
+        assertEquals(4242, HelperHandoff.shellPid(intArrayOf(2000, 4242)))
+        assertNull(HelperHandoff.shellPid(intArrayOf(10086, 4242)))
+        assertNull(HelperHandoff.shellPid(intArrayOf(2000, 0)))
+        assertNull(HelperHandoff.shellPid(intArrayOf(2000)))
+        assertNull(HelperHandoff.shellPid(null))
+    }
+
+    @Test
     fun authorityFollowsPackage() {
         assertEquals("io.github.icexxl.etax.helper", HelperHandoff.authority("io.github.icexxl.etax"))
     }

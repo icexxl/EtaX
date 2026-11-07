@@ -15,6 +15,7 @@ import android.graphics.Rect
 import android.os.Build
 import android.os.SystemClock
 import android.view.Display
+import android.view.KeyEvent
 import java.io.IOException
 import java.io.StringReader
 import java.util.concurrent.TimeUnit
@@ -523,6 +524,24 @@ internal class RootShellDeviceController(
         val normalized = button.uppercase()
         if (normalized == "PASTE" && !rootAvailable()) return rootRequired()
         val isVirtual = CanvasRoutingPolicy.isVirtualDisplay(displayId)
+        if (isVirtual && normalized in setOf("NOTIFICATIONS", "QUICK_SETTINGS")) {
+            return errorJson("MAIN_DISPLAY_ONLY", "$normalized 只能在物理主屏打开")
+        }
+        if (isVirtual && !rootAvailable() && normalized in setOf("BACK", "HOME", "RECENTS")) {
+            // Accessibility GLOBAL_ACTION always targets the physical display. Never invoke it
+            // while the agent is operating a background virtual display.
+            val keyCode = when (normalized) {
+                "BACK" -> KeyEvent.KEYCODE_BACK
+                "HOME" -> KeyEvent.KEYCODE_HOME
+                else -> KeyEvent.KEYCODE_APP_SWITCH
+            }
+            return if (VirtualDisplayController.injectShellKey(displayId, keyCode)) {
+                JSONObject(okJson("press_key", "shell_helper"))
+                    .put("button", normalized).toString()
+            } else {
+                errorJson("VIRTUAL_DISPLAY_INPUT_FAILED", "无法向虚拟屏定向发送 $normalized")
+            }
+        }
         AgentAccessibilityService.current()?.let { service ->
             when (normalized) {
                 "BACK", "HOME", "RECENTS", "NOTIFICATIONS", "QUICK_SETTINGS" -> {
