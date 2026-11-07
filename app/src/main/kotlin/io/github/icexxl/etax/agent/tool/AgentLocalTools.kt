@@ -238,6 +238,10 @@ internal class AgentLocalTools(
                     publishedObservation.set(PublishedObservation())
                     textResult(presentToUser(args))
                 }
+                "take_back_from_user" -> {
+                    publishedObservation.set(PublishedObservation())
+                    textResult(takeBackFromUser())
+                }
                 "open_uri" -> {
                     publishedObservation.set(PublishedObservation())
                     textResult(openUri(args))
@@ -891,7 +895,12 @@ internal class AgentLocalTools(
         val mainForegroundPkg = AgentAccessibilityService.current()?.currentPackageName(Display.DEFAULT_DISPLAY)
         val targetCanvas = CanvasRoutingPolicy.decideLaunchTarget(
             virtualDisplayEnabled = virtualDisplayEnabled(),
-            backendAvailable = VirtualDisplayController.isBackendAvailable(rootAvailable(), lsposedAvailable()),
+            backendAvailable = VirtualDisplayController.isBackendAvailable(
+                rootAvailable = rootAvailable(),
+                lsposedAvailable = lsposedAvailable(),
+                shellAvailable = io.github.icexxl.etax.channel.shell.EtaShellConnection
+                    .isConnected(requireContext()),
+            ),
             requested = requestedDisplay,
             targetPackage = app.packageName,
             foregroundPackageOnMainDisplay = mainForegroundPkg,
@@ -940,10 +949,15 @@ internal class AgentLocalTools(
         val reason = args.optString("reason").trim()
         val vdSnapshot = VirtualDisplayController.snapshots.value
         val wasVirtual = vdSnapshot.active || CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId)
-        val presented = if (wasVirtual) {
-            VirtualDisplayController.handoffToMainDisplay(context, rootAvailable)
-        } else {
-            true
+        // 有 shell 助手（免 Root）时只把任务挪到主屏、保留虚拟屏，
+        // 用户处理完还能用 take_back_from_user 挪回来继续；别的后端沿用整屏移交。
+        val viaShell = wasVirtual && io.github.icexxl.etax.channel.shell.EtaShellConnection
+            .isConnected(context) &&
+            VirtualDisplayController.handOverTopTaskToUser(context)
+        val presented = when {
+            viaShell -> true
+            wasVirtual -> VirtualDisplayController.handoffToMainDisplay(context, rootAvailable)
+            else -> true
         }
         activeDisplayId = Display.DEFAULT_DISPLAY
         return JSONObject()
@@ -957,6 +971,31 @@ internal class AgentLocalTools(
                 if (vdSnapshot.packageName.isNotBlank()) put("package_name", vdSnapshot.packageName)
                 if (reason.isNotBlank()) put("reason", reason)
             }
+            .toString()
+    }
+
+    /** 用户处理完（登录/付款/验证码），把任务挪回虚拟屏，Agent 接着做。 */
+    private fun takeBackFromUser(): String {
+        val context = requireContext()
+        val vdSnapshot = VirtualDisplayController.snapshots.value
+        if (!vdSnapshot.active) {
+            return errorResult("NO_VIRTUAL_DISPLAY", "当前没有可用的虚拟屏")
+        }
+        val moved = VirtualDisplayController.takeBackTaskFromUser(context)
+        activeDisplayId = if (moved) vdSnapshot.displayId else Display.DEFAULT_DISPLAY
+        logger.info("Agent local tool action=take_back_from_user moved=$moved")
+        return JSONObject()
+            .put("ok", moved)
+            .put("tool", "take_back_from_user")
+            .put("canvas", if (moved) {
+                CanvasRoutingPolicy.CanvasTarget.VIRTUAL_DISPLAY.wireName
+            } else {
+                CanvasRoutingPolicy.CanvasTarget.MAIN_DISPLAY.wireName
+            })
+            .put(
+                "message",
+                if (moved) "已挪回虚拟屏，可以继续操作" else "挪回失败，应用可能仍停在主屏",
+            )
             .toString()
     }
 
@@ -979,7 +1018,12 @@ internal class AgentLocalTools(
         val mainForegroundPkg = AgentAccessibilityService.current()?.currentPackageName(Display.DEFAULT_DISPLAY)
         val targetCanvas = CanvasRoutingPolicy.decideLaunchTarget(
             virtualDisplayEnabled = virtualDisplayEnabled(),
-            backendAvailable = VirtualDisplayController.isBackendAvailable(rootAvailable(), lsposedAvailable()),
+            backendAvailable = VirtualDisplayController.isBackendAvailable(
+                rootAvailable = rootAvailable(),
+                lsposedAvailable = lsposedAvailable(),
+                shellAvailable = io.github.icexxl.etax.channel.shell.EtaShellConnection
+                    .isConnected(requireContext()),
+            ),
             requested = CanvasRoutingPolicy.RequestedDisplay.AUTO,
             targetPackage = resolvedPkg,
             foregroundPackageOnMainDisplay = mainForegroundPkg,

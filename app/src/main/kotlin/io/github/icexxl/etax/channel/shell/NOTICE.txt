@@ -1,0 +1,5 @@
+These files are derived from the Mika project (https://github.com/wangzan101/Mika),
+revision 9fbbc89, licensed under the Apache License, Version 2.0, and have been
+modified: package renamed to io.github.icexxl.etax.channel.shell, trimmed to the
+subset EtaX needs, and adapted to EtaX.
+Portions Copyright the Mika project contributors.

@@ -556,6 +556,11 @@ fun AgentAppRoot(
                     if (backStack.isEmpty()) backStack.add(AppRoute.Home)
                 }
             }
+            entry<AppRoute.ShellHelper>(swipeDismiss = swipeDismiss) {
+                io.github.icexxl.etax.channel.shell.ShellHelperScreen(
+                    onBack = { if (navigator.current() == AppRoute.ShellHelper) popRoute() },
+                )
+            }
             entry<AppRoute.OpenClaw>(swipeDismiss = swipeDismiss) {
                 // 不再包 RoutedShell：页面自身用 MiuixScaffoldPage，包一层会出现两条 AppBar
                 io.github.icexxl.etax.channel.openclaw.OpenClawSettingsScreen(

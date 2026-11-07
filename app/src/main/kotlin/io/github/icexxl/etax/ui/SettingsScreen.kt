@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Forum
@@ -495,6 +496,17 @@ private fun SettingsPageContent(
                         summary = "与 OpenClaw agent 对话",
                         startAction = { SettingsIcon(Icons.Rounded.Forum, tint = SettingsIconColors.Blue) },
                         onClick = { onNavigate(AppRoute.OpenClaw) },
+                    )
+                }
+            }
+
+            item(key = "rootless_display") {
+                SettingsGroupCard {
+                    ArrowPreference(
+                        title = "免 Root 虚拟屏",
+                        summary = "用系统无线调试做后台虚拟屏，不需要 Root 或 LSPosed",
+                        startAction = { SettingsIcon(Icons.Rounded.OpenInNew, tint = SettingsIconColors.Green) },
+                        onClick = { onNavigate(AppRoute.ShellHelper) },
                     )
                 }
             }

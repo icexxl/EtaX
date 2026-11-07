@@ -49,6 +49,9 @@ import org.lsposed.hiddenapibypass.HiddenApiBypass
  */
 internal object VirtualDisplayController {
 
+    /** 在主屏任务列表里最多走几个任务去找目标包。 */
+    private const val MAX_WALK_TASKS = 8
+
     private val lock = Any()
     private val mutableSnapshots = MutableStateFlow(VirtualDisplaySnapshot.Inactive)
     val snapshots: StateFlow<VirtualDisplaySnapshot> = mutableSnapshots.asStateFlow()
@@ -64,6 +67,11 @@ internal object VirtualDisplayController {
     private var imageReader: ImageReader? = null
     private var inProcessVirtualDisplay: VirtualDisplay? = null
     private var rootBridgeProcess: Process? = null
+    /** 经 shell 助手创建的屏号（释放时要交回给助手）。 */
+    private var shellDisplayId: Int = Display.INVALID_DISPLAY
+    /** 建屏时记下的 Application context：注入回调里没有 context 参数。 */
+    @Volatile
+    private var appContextOrNull: Context? = null
     private var processSupervisor: ShellProcessSupervisor? = null
 
     private var activeDisplayId: Int = Display.DEFAULT_DISPLAY
@@ -74,8 +82,11 @@ internal object VirtualDisplayController {
     private var lastUiFrameAtElapsedMs: Long = 0L
     private val mutedPackages = linkedSetOf<String>()
 
-    fun isBackendAvailable(rootAvailable: Boolean, lsposedAvailable: Boolean): Boolean =
-        rootAvailable || lsposedAvailable
+    fun isBackendAvailable(
+        rootAvailable: Boolean,
+        lsposedAvailable: Boolean,
+        shellAvailable: Boolean = false,
+    ): Boolean = rootAvailable || lsposedAvailable || shellAvailable
 
     fun setStageExpanded(expanded: Boolean) {
         highFrequencyPreview = expanded
@@ -107,6 +118,7 @@ internal object VirtualDisplayController {
             }
         }
         val appContext = context.applicationContext
+        appContextOrNull = appContext
         val (width, height, densityDpi) = resolvePhysicalDisplayMetrics(appContext)
         synchronized(lock) {
             if (CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId) && imageReader != null) {
@@ -148,6 +160,22 @@ internal object VirtualDisplayController {
                     return id
                 }
                 runCatching { createdInProcess.release() }
+            }
+
+            // 免 Root 路径：App 侧建 ImageReader，把 Surface 交给 shell 助手建屏。
+            // 画面仍回到本进程，截图与预览逻辑不变。
+            val shellId = tryCreateViaShellHelper(appContext, reader.surface, width, height, densityDpi)
+            if (shellId != null && CanvasRoutingPolicy.isVirtualDisplay(shellId)) {
+                shellDisplayId = shellId
+                activeDisplayId = shellId
+                mutableSnapshots.value = VirtualDisplaySnapshot(
+                    active = true,
+                    displayId = shellId,
+                    width = width,
+                    height = height,
+                )
+                AndroidAgentLogger.info("Virtual display created via shell helper: displayId=$shellId")
+                return shellId
             }
 
             if (rootAvailable()) {
@@ -332,6 +360,83 @@ internal object VirtualDisplayController {
     }
 
     /**
+     * 把虚拟屏最上面的任务交给用户在主屏处理（接管），但**保留虚拟屏**，
+     * 这样用户处理完后还能挪回来继续。返回是否成功。
+     *
+     * 与 [handoffToMainDisplay] 的区别：那个是任务结束时的最终移交，会释放屏；
+     * 这里是为“等用户操作”准备的临时移交。
+     */
+    fun handOverTopTaskToUser(context: Context): Boolean {
+        val snapshot = synchronized(lock) { mutableSnapshots.value }
+        if (!snapshot.active || !CanvasRoutingPolicy.isVirtualDisplay(snapshot.displayId)) return false
+        val shell = io.github.icexxl.etax.channel.shell.EtaShellConnection.shell(context.applicationContext)
+            ?: return handOffViaRoot(context, snapshot)
+        return runCatching {
+            val taskId = shell.topTaskId(snapshot.displayId)
+            if (taskId <= 0) return false
+            val moved = shell.moveTask(taskId, Display.DEFAULT_DISPLAY)
+            if (moved) {
+                // 交给用户时恢复声音，不然用户听不到提示
+                snapshot.packageName.takeIf { it.isNotBlank() }?.let { pkg ->
+                    runCatching { shell.setAudioMuted(pkg, false) }
+                }
+                synchronized(lock) {
+                    mutableSnapshots.value = mutableSnapshots.value.copy(userControlling = true)
+                }
+            }
+            moved
+        }.getOrDefault(false)
+    }
+
+    /** 用户处理完：把主屏上那个任务挪回虚拟屏，重新静音并让 Agent 接着做。 */
+    fun takeBackTaskFromUser(context: Context): Boolean {
+        val snapshot = synchronized(lock) { mutableSnapshots.value }
+        if (!snapshot.active || !CanvasRoutingPolicy.isVirtualDisplay(snapshot.displayId)) return false
+        val shell = io.github.icexxl.etax.channel.shell.EtaShellConnection.shell(context.applicationContext)
+            ?: return false
+        return runCatching {
+            val pkg = snapshot.packageName
+            val taskId = findTaskOnDisplay(shell, Display.DEFAULT_DISPLAY, pkg)
+            if (taskId <= 0) return false
+            val moved = shell.moveTask(taskId, snapshot.displayId)
+            if (moved) {
+                if (pkg.isNotBlank()) runCatching { shell.setAudioMuted(pkg, true) }
+                synchronized(lock) {
+                    mutableSnapshots.value = mutableSnapshots.value.copy(userControlling = false)
+                }
+            }
+            moved
+        }.getOrDefault(false)
+    }
+
+    /** 在主屏任务里找属于 [packageName] 的那个；[packageName] 为空时取主屏最上面的。 */
+    private fun findTaskOnDisplay(
+        shell: io.github.icexxl.etax.shell.IEtaShell,
+        displayId: Int,
+        packageName: String,
+    ): Int = runCatching {
+        if (packageName.isBlank()) return shell.topTaskId(displayId)
+        // 逐个任务问所属包，命中即返回
+        var taskId = shell.topTaskId(displayId)
+        var guard = 0
+        while (taskId > 0 && guard < MAX_WALK_TASKS) {
+            if (shell.packageOfTask(taskId) == packageName) return taskId
+            // 没有“上一个任务”的接口，退化为只查最上面那个
+            break
+        }
+        -1
+    }.getOrDefault(-1)
+
+    /** 没有 shell 助手时（有 Root）退回原来的整屏移交路径。 */
+    private fun handOffViaRoot(
+        context: Context,
+        snapshot: VirtualDisplaySnapshot,
+    ): Boolean = runCatching {
+        handoffToMainDisplay(context)
+        true
+    }.getOrDefault(false)
+
+    /**
      * 提取虚拟屏最新一帧的完整 Bitmap 副本（供 observe_screen 使用，调用方负责 recycle）。
      */
     fun captureScreenshotBitmap(waitUpToMs: Long = 450L): Bitmap? {
@@ -407,7 +512,15 @@ internal object VirtualDisplayController {
             val dispatched = AgentAccessibilityService.current()
                 ?.gestureTap(x.toFloat(), y.toFloat(), durationMs = duration, displayId = snapshot.displayId)
                 ?.ok == true
-            if (!dispatched && rootAvailable()) {
+            // 免 Root：交回 shell 助手注入（长按用等长的一笔原地滑动）
+            val viaShell = !dispatched && injectViaShellHelper(
+                context = appContextOrNull,
+                displayId = snapshot.displayId,
+                tapX = x,
+                tapY = y,
+                longPress = longPress,
+            )
+            if (!dispatched && !viaShell && rootAvailable()) {
                 val exec = BoundedRootCommandExecutor(AndroidAgentLogger, rootAvailable = rootAvailable)
                 try {
                     val cmd = if (longPress) {
@@ -449,7 +562,16 @@ internal object VirtualDisplayController {
                     durationMs = safeDuration.toLong(),
                     displayId = snapshot.displayId,
                 )?.ok == true
-            if (!dispatched && rootAvailable()) {
+            val viaShell = !dispatched && injectSwipeViaShellHelper(
+                context = appContextOrNull,
+                displayId = snapshot.displayId,
+                x1 = x1,
+                y1 = y1,
+                x2 = x2,
+                y2 = y2,
+                durationMs = safeDuration,
+            )
+            if (!dispatched && !viaShell && rootAvailable()) {
                 val exec = BoundedRootCommandExecutor(AndroidAgentLogger, rootAvailable = rootAvailable)
                 try {
                     exec.execute(
@@ -490,6 +612,15 @@ internal object VirtualDisplayController {
             runCatching { vd.release() }
         }
         inProcessVirtualDisplay = null
+
+        val shellId = shellDisplayId
+        shellDisplayId = Display.INVALID_DISPLAY
+        if (shellId != Display.INVALID_DISPLAY && context != null) {
+            runCatching {
+                io.github.icexxl.etax.channel.shell.EtaShellConnection
+                    .shell(context.applicationContext)?.releaseDisplay(shellId)
+            }
+        }
 
         val bridge = rootBridgeProcess
         val supervisor = processSupervisor
@@ -643,6 +774,61 @@ internal object VirtualDisplayController {
                 CanvasRoutingPolicy.TRUSTED_INTERACTIVE_FLAGS,
             )
         }
+    }.getOrNull()
+
+    /** 经 shell 助手注入一次点击；长按用等长的一笔原地滑动。 */
+    private fun injectViaShellHelper(
+        context: Context?,
+        displayId: Int,
+        tapX: Int,
+        tapY: Int,
+        longPress: Boolean,
+    ): Boolean = runCatching {
+        val shell = context
+            ?.let { io.github.icexxl.etax.channel.shell.EtaShellConnection.shell(it.applicationContext) }
+            ?: return false
+        if (longPress) {
+            shell.injectStroke(displayId, intArrayOf(tapX, tapX), intArrayOf(tapY, tapY), longArrayOf(0L, 650L))
+        } else {
+            shell.injectTap(displayId, tapX, tapY)
+        }
+    }.getOrDefault(false)
+
+    /** 经 shell 助手注入一次滑动。 */
+    private fun injectSwipeViaShellHelper(
+        context: Context?,
+        displayId: Int,
+        x1: Int,
+        y1: Int,
+        x2: Int,
+        y2: Int,
+        durationMs: Int,
+    ): Boolean = runCatching {
+        val shell = context
+            ?.let { io.github.icexxl.etax.channel.shell.EtaShellConnection.shell(it.applicationContext) }
+            ?: return false
+        // 按时间把这一笔拆成若干点，注入速度就是用户看到的速度
+        val total = durationMs.coerceIn(140, 1_500)
+        val steps = 12
+        val xs = IntArray(steps + 1) { i -> x1 + (x2 - x1) * i / steps }
+        val ys = IntArray(steps + 1) { i -> y1 + (y2 - y1) * i / steps }
+        val times = LongArray(steps + 1) { i -> total.toLong() * i / steps }
+        shell.injectStroke(displayId, xs, ys, times)
+    }.getOrDefault(false)
+
+    /** 经 shell 助手（免 Root）建屏；助手不可用时返回 null，由调用方继续尝试别的后端。 */
+    private fun tryCreateViaShellHelper(
+        context: Context,
+        surface: android.view.Surface,
+        width: Int,
+        height: Int,
+        densityDpi: Int,
+    ): Int? = runCatching {
+        val shell = io.github.icexxl.etax.channel.shell.EtaShellConnection.shell(context) ?: return null
+        val id = shell.createDisplay(surface, width, height, densityDpi)
+        id.takeIf { CanvasRoutingPolicy.isVirtualDisplay(it) }
+    }.onFailure {
+        AndroidAgentLogger.debug { "shell helper createDisplay failed: ${it.safeLogType()}" }
     }.getOrNull()
 
     private fun tryCreateRootBridgedVirtualDisplay(

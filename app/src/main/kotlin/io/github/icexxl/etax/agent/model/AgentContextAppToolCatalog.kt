@@ -103,6 +103,16 @@ internal object AgentContextAppToolCatalog {
             )
             .put(
                 AgentToolSchema.function(
+                    name = "take_back_from_user",
+                    description = "用户已在主屏处理完（登录、付款确认、验证码等）之后调用：把应用挪回后台虚拟屏，让任务继续在后台执行，不打扰用户主屏。仅当之前用 present_to_user 把画面交给过用户时使用。",
+                    parameters = JSONObject()
+                        .put("type", "object")
+                        .put("properties", JSONObject().put("additionalProperties", false))
+                        .put("additionalProperties", false),
+                )
+            )
+            .put(
+                AgentToolSchema.function(
                     name = "open_uri",
                     description = "把一个确定有效的 URI 显式交给 Android 外部应用处理，例如 https、tel、geo 或应用 deep link。它不用于读取网页或网页交互。不要编造 URI。",
                     parameters = JSONObject()
