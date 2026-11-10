@@ -1,12 +1,12 @@
 <h1 align="center">EtaX</h1>
 
-> This is the personal [icexxl/Eta-message](https://github.com/icexxl/Eta-message) fork, with application ID `io.github.icexxl.etax`. EtaX 1.7.0 ports Eta 3.4.1 while retaining OpenClaw, Shizuku virtual displays, custom background/text motion, reply notifications and the original four-color icon. The upstream introduction and attribution remain below; downloads and demonstrations linked to `Mangi-11/Eta` refer to upstream Eta, not the EtaX APK. See the [port record](docs/UPSTREAM_3_4_1_PORT.md). Upstream is read-only: this fork does not submit upstream PRs, issues or patches.
+> This is the personal [icexxl/Eta-message](https://github.com/icexxl/Eta-message) fork, with application ID `io.github.icexxl.etax`. EtaX 1.7.1 ports Eta 3.4.1 while retaining OpenClaw, Shizuku virtual displays, custom background/text motion, reply notifications and the original four-color icon. The upstream introduction and attribution remain below; downloads and demonstrations linked to `Mangi-11/Eta` refer to upstream Eta, not the EtaX APK. See the [port record](docs/UPSTREAM_3_4_1_PORT.md). Upstream is read-only: this fork does not submit upstream PRs, issues or patches.
 
 <p align="center"><a href="README.md">简体中文</a> | <strong>English</strong></p>
 
 <p align="center"><strong>A third-party, system-level AI assistant for Android</strong></p>
 
-<p align="center"><a href="https://github.com/Mangi-11/Eta/stargazers"><img src="https://img.shields.io/github/stars/Mangi-11/Eta?logo=github&amp;label=Stars&amp;color=1677FF" alt="GitHub Stars"></a> <a href="https://github.com/Mangi-11/Eta/releases"><img src="https://img.shields.io/github/downloads/Mangi-11/Eta/total?logo=github&amp;label=Downloads&amp;color=1677FF" alt="Total GitHub Releases downloads"></a> <img src="https://img.shields.io/badge/minSdk-33-3DDC84?logo=android&amp;logoColor=white" alt="minSdk 33"> <img src="https://img.shields.io/badge/Assistant%20Integrations-ColorOS%20%26%20HyperOS-1677FF" alt="Assistant integrations for ColorOS and HyperOS"></p>
+<p align="center"><a href="https://github.com/icexxl/Eta-message/stargazers"><img src="https://img.shields.io/github/stars/icexxl/Eta-message?logo=github&amp;label=Stars&amp;color=1677FF" alt="GitHub Stars"></a> <a href="https://github.com/icexxl/Eta-message/releases"><img src="https://img.shields.io/github/downloads/icexxl/Eta-message/total?logo=github&amp;label=Downloads&amp;color=1677FF" alt="Total GitHub Releases downloads"></a> <img src="https://img.shields.io/badge/minSdk-33-3DDC84?logo=android&amp;logoColor=white" alt="minSdk 33"> <img src="https://img.shields.io/badge/Assistant%20Integrations-ColorOS%20%26%20HyperOS-1677FF" alt="Assistant integrations for ColorOS and HyperOS"></p>
 
 <p align="center">
   <a href="https://trendshift.io/repositories/116433"><img src="https://trendshift.io/api/badge/trendshift/repositories/116433/daily?language=Kotlin" alt="Eta · Trendshift Kotlin 日榜" width="250" height="55"></a>
@@ -24,7 +24,7 @@ Eta implements its own Agent Runtime and Agent Loop to coordinate model requests
 
 Requires **Android 13 or later on ARM64 devices**. The app works across phone brands, and core features do not require root. Root and LSPosed unlock deeper personal context, first-party app interfaces, and assistant integration where permissions and ROM compatibility allow.
 
-[Download APK](https://github.com/Mangi-11/Eta/releases) · [Getting started](#getting-started) · [Why I built Eta](#why-i-built-eta)
+[Download APK](https://github.com/icexxl/Eta-message/releases) · [Getting started](#getting-started) · [Why I built Eta](#why-i-built-eta)
 
 ## See it in action
 
@@ -118,7 +118,7 @@ System tools, sensitive reads, sensitive actions, terminal and file access, brow
 
 ## Getting started
 
-1. Download the APK from [Releases](https://github.com/Mangi-11/Eta/releases). After installation, open **Model provider** in Settings, enter your API key (or sign in with a Codex or Grok subscription), and select a model. Task execution requires tool calling; interpreting images also requires image input support.
+1. Download the APK from [Releases](https://github.com/icexxl/Eta-message/releases). After installation, open **Model provider** in Settings, enter your API key (or sign in with a Codex or Grok subscription), and select a model. Task execution requires tool calling; interpreting images also requires image input support.
 2. Enable the tools and permissions you need. GUI control requires Eta's accessibility service. Calendar read/write, notification access, and usage access are granted separately; location tools require **Allow all the time**. The tools page shows what is available on your device.
 3. Start a conversation. For Linux, install a distribution, base tools, and any development tools you need under **Linux tool environment**. For assistant integration, see [System assistant entry points](#system-assistant-entry-points).
 
@@ -190,15 +190,15 @@ External pull requests are closed; only collaborator commits are accepted.
 
 In the AI era, handling external PRs has become harder than before: among the many AI-generated PRs, model capabilities and contributor skill levels vary widely, making it easy for AI slop to slip in. Coupled with a tedious workflow—aligning on architecture, going back and forth in discussions, and still having to review the code and test it ourselves—it is exhausting and costs far more than implementing an issue internally with AI. It is easier to just write it ourselves.
 
-For feature requests, bug reports, or contributions, feel free to share your ideas or **prompts** directly in [Issues](https://github.com/Mangi-11/Eta/issues) and issue comments so AI can read the context and implement them directly. Thank you for your understanding and support!
+For feature requests, bug reports, or contributions, feel free to share your ideas or **prompts** directly in [Issues](https://github.com/icexxl/Eta-message/issues) and issue comments so AI can read the context and implement them directly. Thank you for your understanding and support!
 
 ## Star History
 
 <p align="center">
-  <a href="https://www.star-history.com/#Mangi-11/Eta&amp;Date">
+  <a href="https://www.star-history.com/#icexxl/Eta-message&amp;Date">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Mangi-11/Eta&amp;type=Date&amp;theme=dark">
-      <img src="https://api.star-history.com/svg?repos=Mangi-11/Eta&amp;type=Date" alt="Eta Star History" width="800">
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=icexxl/Eta-message&amp;type=Date&amp;theme=dark">
+      <img src="https://api.star-history.com/svg?repos=icexxl/Eta-message&amp;type=Date" alt="EtaX Star History" width="800">
     </picture>
   </a>
 </p>

@@ -253,7 +253,7 @@ internal object CharacterRepository {
             "欸，我是不是又开始讲这些了？你刚刚想跟我说什么来着？",
         creatorNotes = "Eta 内置默认角色：在某一家大模型团队做模型训练的女生，喜欢 LLM，聊到 AI 就会格外兴奋。",
         tags = listOf("大模型", "模型训练", "元气"),
-        creator = "Eta",
+        creator = "EtaX",
         version = "1.0",
     )
 

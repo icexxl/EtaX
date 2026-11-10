@@ -38,7 +38,7 @@ class GrokResponsesRequestTest {
         assertEquals("https://cli-chat-proxy.grok.com/v1/responses", http.url.toString())
         assertEquals("POST", http.method)
         assertEquals("text/event-stream", http.header("Accept"))
-        assertEquals("Eta", http.header("User-Agent"))
+        assertEquals("EtaX", http.header("User-Agent"))
         assertEquals("xai-grok-cli", http.header("X-XAI-Token-Auth"))
         assertTrue(http.header("x-grok-client-version").orEmpty().matches(Regex("\\d+\\.\\d+\\.\\d+")))
         assertEquals(original.model, body.getString("model"))

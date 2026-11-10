@@ -790,14 +790,14 @@ private fun SettingsPageContent(
                                 SettingsIconColors.Orange,
                             )
                         },
-                        onClick = { openUrl("https://github.com/Mangi-11/Eta/issues") },
+                        onClick = { openUrl("https://github.com/icexxl/Eta-message/issues") },
                     )
                     CouiIconDivider()
                     CouiPreference(
                         title = stringResource(R.string.ui_about_github_star_title),
                         summary = stringResource(R.string.ui_about_github_star_hint),
                         icon = { CouiSettingsIcon(Icons.Rounded.Code, SettingsIconColors.Blue) },
-                        onClick = { openUrl("https://github.com/Mangi-11/Eta") },
+                        onClick = { openUrl("https://github.com/icexxl/Eta-message") },
                     )
                 }
 
@@ -1291,7 +1291,7 @@ private fun SettingsPageContent(
                                     tint = SettingsIconColors.Orange,
                                 )
                             },
-                            onClick = { openUrl("https://github.com/Mangi-11/Eta/issues") },
+                            onClick = { openUrl("https://github.com/icexxl/Eta-message/issues") },
                         )
                         ArrowPreference(
                             title = stringResource(R.string.ui_about_github_star_title),
@@ -1302,7 +1302,7 @@ private fun SettingsPageContent(
                                     tint = SettingsIconColors.Blue,
                                 )
                             },
-                            onClick = { openUrl("https://github.com/Mangi-11/Eta") },
+                            onClick = { openUrl("https://github.com/icexxl/Eta-message") },
                         )
                     }
                 }
@@ -1512,7 +1512,7 @@ private fun PowerAssistantTarget.displayName(context: Context): String =
     when (this) {
         PowerAssistantTarget.OEM -> context.getString(R.string.power_assistant_system_default)
         PowerAssistantTarget.GEMINI -> "Gemini"
-        PowerAssistantTarget.ETA -> "Eta"
+        PowerAssistantTarget.ETA -> "EtaX"
     }
 
 private fun isAgentAccessibilityEnabled(context: Context): Boolean {

@@ -1,12 +1,12 @@
 <h1 align="center">EtaX</h1>
 
-> 此仓库为 [icexxl/Eta-message](https://github.com/icexxl/Eta-message) 个人分支，应用 ID 为 `io.github.icexxl.etax`。EtaX 1.7.0 已移植 Eta 3.4.1 的功能更新，并保留 OpenClaw、Shizuku 免 Root 副屏、光幕/文字动效、后台回复提醒及原四色图标。下文保留 Eta 上游的项目介绍与署名；其中指向 `Mangi-11/Eta` 的下载与演示属于上游版本，不是 EtaX 安装包。整合记录见 [移植说明](docs/UPSTREAM_3_4_1_PORT.md)。上游仅作只读参考，本分支不向上游提交 PR、issue 或补丁。
+> 此仓库为 [icexxl/Eta-message](https://github.com/icexxl/Eta-message) 个人分支，应用 ID 为 `io.github.icexxl.etax`。EtaX 1.7.1 已移植 Eta 3.4.1 的功能更新，并保留 OpenClaw、Shizuku 免 Root 副屏、光幕/文字动效、后台回复提醒及原四色图标。下文保留 Eta 上游的项目介绍与署名；其中指向 `Mangi-11/Eta` 的下载与演示属于上游版本，不是 EtaX 安装包。整合记录见 [移植说明](docs/UPSTREAM_3_4_1_PORT.md)。上游仅作只读参考，本分支不向上游提交 PR、issue 或补丁。
 
 <p align="center"><strong>简体中文</strong> | <a href="README_EN.md">English</a></p>
 
 <p align="center"><strong>面向 Android 的第三方系统级 AI 助手</strong></p>
 
-<p align="center"><a href="https://github.com/Mangi-11/Eta/stargazers"><img src="https://img.shields.io/github/stars/Mangi-11/Eta?logo=github&amp;label=Stars&amp;color=1677FF" alt="GitHub Stars"></a> <a href="https://github.com/Mangi-11/Eta/releases"><img src="https://img.shields.io/github/downloads/Mangi-11/Eta/total?logo=github&amp;label=Downloads&amp;color=1677FF" alt="GitHub Releases 累计下载量"></a> <img src="https://img.shields.io/badge/minSdk-33-3DDC84?logo=android&amp;logoColor=white" alt="minSdk 33"> <img src="https://img.shields.io/badge/Assistant%20Integrations-ColorOS%20%26%20HyperOS-1677FF" alt="Assistant integrations for ColorOS and HyperOS"></p>
+<p align="center"><a href="https://github.com/icexxl/Eta-message/stargazers"><img src="https://img.shields.io/github/stars/icexxl/Eta-message?logo=github&amp;label=Stars&amp;color=1677FF" alt="GitHub Stars"></a> <a href="https://github.com/icexxl/Eta-message/releases"><img src="https://img.shields.io/github/downloads/icexxl/Eta-message/total?logo=github&amp;label=Downloads&amp;color=1677FF" alt="GitHub Releases 累计下载量"></a> <img src="https://img.shields.io/badge/minSdk-33-3DDC84?logo=android&amp;logoColor=white" alt="minSdk 33"> <img src="https://img.shields.io/badge/Assistant%20Integrations-ColorOS%20%26%20HyperOS-1677FF" alt="Assistant integrations for ColorOS and HyperOS"></p>
 
 <p align="center">
   <a href="https://trendshift.io/repositories/116433"><img src="https://trendshift.io/api/badge/trendshift/repositories/116433/daily?language=Kotlin" alt="Eta · Trendshift Kotlin 日榜" width="250" height="55"></a>
@@ -24,7 +24,7 @@ Eta 独立实现了 Agent Runtime 与 Agent Loop，统一编排模型调用、�
 
 支持 **Android 13 及以上版本的 ARM64 设备**，App 本体不限手机品牌，基础功能无需 Root。Root 和 LSPosed 可进一步开放深层个人上下文、一方应用接口与系统助手入口，具体能力取决于授权和 ROM 适配。
 
-[下载 APK](https://github.com/Mangi-11/Eta/releases) · [快速开始](#快速开始) · [为什么做 Eta](#为什么做-eta)
+[下载 APK](https://github.com/icexxl/Eta-message/releases) · [快速开始](#快速开始) · [为什么做 Eta](#为什么做-eta)
 
 ## 界面预览
 
@@ -48,7 +48,7 @@ Eta 独立实现了 Agent Runtime 与 Agent Loop，统一编排模型调用、�
 ### 执行工具
 
 - **系统与一方应用操作**：直接调用 Android API 与一方应用接口，读写日历日程（支持单条或批量创建、修改、删除）、管理闹钟与计时器、创建和回收系统便签；控制手电筒、亮度、息屏时间、响铃与勿扰、护眼与深色模式、音量、媒体播放，以及 Wi‑Fi、蓝牙、移动数据、个人热点、NFC、定位和省电模式。也可查询应用版本、安装来源与权限，停止或冻结应用，在 Root 授权下筛选系统日志。设置、开关和一方应用写操作都会读回实际状态，未确认时明确报告，不盲目重复执行。
-- **GUI Agent 与后台虚拟屏**：结合无障碍 UI 树、控件定位与按需截图，执行点击、长按、滑动、滚动和文本输入；动作成功后自动附带新界面的节点快照，截图按原始尺寸与像素传递，不在上传前缩放或转 JPEG。支持物理主屏与后台虚拟屏智能分流：目标应用已在主屏前台时直接原地操作（屏幕边缘流光提示正在接管，手势经过状态胶囊时自动让路）；Android 14+ 在具备 Root 或 LSPosed 且通过系统能力校验时，跨应用任务默认于后台受信任虚拟屏执行，隔离输入焦点与软键盘并抑制抢占音频焦点。Android 13 或后端不可用时采用物理主屏。应用启动结果区分已观察到窗口与尚未确认，空节点会注明原因并提示按需截图；运行中的虚拟屏失效时停止该画布的操作，不将旧坐标转用于主屏。虚拟屏运行期间，顶部胶囊右侧嵌入实时微缩取景器，点击胶囊可原地展开留白装裱视窗查看实时画面、直接在画布上触控接管或一键全屏投射；到达收银台、二维码或结果页时，模型也可调用 `present_to_user` 将虚拟屏内的应用原位无缝移交回物理主屏。
+- **GUI Agent 与后台虚拟屏**：结合无障碍 UI 树、控件定位与按需截图，执行点击、长按、滑动、滚动和文本输入；动作成功后自动附带新界面的节点快照，截图按原始尺寸与像素传递，不在上传前缩放或转 JPEG。支持物理主屏与后台虚拟屏智能分流：目标应用已在主屏前台时直接原地操作（屏幕边缘流光提示正在接管，手势经过状态胶囊时自动让路）；Android 14+ 在具备 Root、LSPosed 或已授权的 Shizuku 且通过系统能力校验时，跨应用任务默认于后台受信任虚拟屏执行，隔离输入焦点与软键盘并抑制抢占音频焦点。Android 13 或后端不可用时采用物理主屏；显式要求副屏而不可用时直接失败，不在主屏继续。应用启动结果区分已观察到窗口与尚未确认，空节点会注明原因并提示按需截图；运行中的虚拟屏失效时停止该画布的操作，不将旧坐标转用于主屏。虚拟屏运行期间，顶部胶囊右侧嵌入实时微缩取景器，点击胶囊可原地展开留白装裱视窗查看实时画面、直接在画布上触控接管或一键全屏投射；到达收银台、二维码或结果页时，模型也可调用 `present_to_user` 将虚拟屏内的应用原位无缝移交回物理主屏。
 - **运行通知**：Android 16 及以上且支持 Live Updates 的系统可在状态栏胶囊与锁屏显示 Agent 任务状态，纯后台任务同样适用；具体展示取决于系统支持和通知设置，部分系统映射到流体云或超级岛。仅驻留的终端会话、Linux 等任务保持普通前台通知。
 - **网页搜索与内置浏览器**：提供轻量的公开网页搜索与静态正文分页读取，可在设置中切换内置默认、DeepSeek Search / Fetch 或自定义 HTTP 接口；动态 JavaScript 页面通过内置 WebView 加载，支持读取正文、操作 DOM 与截图，用户可随时打开同一浏览器会话接管。
 - **终端**：Android user/root Shell、Alpine / Debian Linux 与脚本执行，支持会话、异步后台命令和常驻守护任务；返回实际 Shell、执行身份与可解析命令的信息。
@@ -133,7 +133,7 @@ Eta 自身实现了完整的 Android 原生数字助理服务（`VoiceInteractio
 
 ## 快速开始
 
-1. 从 [Releases](https://github.com/Mangi-11/Eta/releases) 下载 APK，安装后在“模型提供商”中填写 API Key（或登录 Codex / Grok 订阅账号）并选择默认模型。执行任务需要 Tool Calling，理解图片还需模型支持图片输入。
+1. 从 [Releases](https://github.com/icexxl/Eta-message/releases) 下载 APK，安装后在“模型提供商”中填写 API Key（或登录 Codex / Grok 订阅账号）并选择默认模型。执行任务需要 Tool Calling，理解图片还需模型支持图片输入。
 2. 按任务需要配置工具开关与权限：GUI Agent 需要无障碍服务；日历读写、通知、应用使用情况分别授权；位置工具需要“始终允许”。工具页可查看当前设备的可用能力。
 3. 开始对话。需要 Linux 时，在“Linux 工具环境”中安装发行版、基础工具及所需开发工具；需要系统入口时，参见[系统助手入口](#系统助手入口)。
 
@@ -203,15 +203,15 @@ Eta 先从现有 Android 上的模型、上下文与工具做起。真正落地�
 
 AI 时代下，处理外部 PR 变得比以往更加困难：大量由 AI 生成的 PR 中，模型能力与提交者水平参差不齐，容易混入不少 AI slop。加上处理流程繁琐，不仅要来回沟通、对齐项目架构，还要自己 Review 代码、跑测试验证——实在太累了，成本远高于拿到 Issue 后直接在内部用 AI 实现，还不如自己写。
 
-新功能需求、问题反馈或功能贡献，欢迎直接在 [Issues](https://github.com/Mangi-11/Eta/issues) 及评论区提交你的思路或 **Prompt**，方便 AI 直接读取上下文完成实现。谢谢大家的理解与支持！
+新功能需求、问题反馈或功能贡献，欢迎直接在 [Issues](https://github.com/icexxl/Eta-message/issues) 及评论区提交你的思路或 **Prompt**，方便 AI 直接读取上下文完成实现。谢谢大家的理解与支持！
 
 ## Star History
 
 <p align="center">
-  <a href="https://www.star-history.com/#Mangi-11/Eta&amp;Date">
+  <a href="https://www.star-history.com/#icexxl/Eta-message&amp;Date">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Mangi-11/Eta&amp;type=Date&amp;theme=dark">
-      <img src="https://api.star-history.com/svg?repos=Mangi-11/Eta&amp;type=Date" alt="Eta Star History" width="800">
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=icexxl/Eta-message&amp;type=Date&amp;theme=dark">
+      <img src="https://api.star-history.com/svg?repos=icexxl/Eta-message&amp;type=Date" alt="EtaX Star History" width="800">
     </picture>
   </a>
 </p>

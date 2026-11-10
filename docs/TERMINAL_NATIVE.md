@@ -1,6 +1,6 @@
 # 终端原生组件
 
-Eta 将终端辅助程序作为独立 ELF 可执行文件打包在 `jniLibs` 中。文件使用 `.so` 后缀以便由 Android 安装器提取到只读的 `nativeLibraryDir`，不会通过 JNI 加载，也不从可写目录执行 Android 原生辅助程序。
+EtaX 将终端辅助程序作为独立 ELF 可执行文件打包在 `jniLibs` 中。文件使用 `.so` 后缀以便由 Android 安装器提取到只读的 `nativeLibraryDir`，不会通过 JNI 加载，也不从可写目录执行 Android 原生辅助程序。
 
 | 程序 | ABI | 用途 |
 | --- | --- | --- |
@@ -16,7 +16,7 @@ PRoot 只支持本机对应的 64 位 Linux rootfs，不执行异构指令集，
 
 PTY 参数为 `rows cols -- executable args...`，Root 与普通身份的控制台会话都由它建立独立 session。标准输出传输原始终端字节；标准输入按帧传输，帧头为 1 字节类型与 2 字节大端长度：类型 0 为终端字节，原样写入伪终端；类型 1 为窗口尺寸，载荷是大端 rows、cols 各 2 字节，取值 1 到 1000，写入后由内核向前台进程组发送 SIGWINCH；未知类型按长度跳过。Ctrl-C 作为终端字节经 PTY 发送到当前前台进程组；输入管道关闭时发送终端 EOF；关闭窗口、父进程退出或输出管道断开时清理终端进程组。退出码保留子进程状态。
 
-PRoot 调用方必须设置 `PROOT_LOADER` 为当前 `nativeLibraryDir/libproot_loader.so`，设置 `PROOT_TMP_DIR` 为 Eta 可写的私有临时目录。缺失加载器不会转而寻找其他应用的安装路径。共享内存补丁也使用同一临时目录，不依赖全局 `/tmp`。
+PRoot 调用方必须设置 `PROOT_LOADER` 为当前 `nativeLibraryDir/libproot_loader.so`，设置 `PROOT_TMP_DIR` 为 EtaX 可写的私有临时目录。缺失加载器不会转而寻找其他应用的安装路径。共享内存补丁也使用同一临时目录，不依赖全局 `/tmp`。
 
 ## 重建
 
@@ -30,4 +30,4 @@ ANDROID_NDK_HOME=/path/to/android-ndk scripts/build-terminal-native.sh
 
 脚本只生成 ARM64 ELF，并把实际脚本、版本目录、PTY 源码及补丁自动打入 `app/src/main/assets/native-sources/eta-native-build.tgz`，该包不应手工修改。APK 的 `assets/native-sources` 还包含 PRoot、talloc 和 libandroid-shmem 的原始源码；源码资源使用 `.tgz` 后缀，避免 Android 资源打包自动解压 `.gz` 文件后改变名称与校验值。`assets/licenses` 包含各自许可证。解压构建包恢复仓库相对路径，再把原始源码所在目录传给 `ETA_NATIVE_SOURCES`，即可重建随包组件。
 
-源码包与重新生成的二进制需要一起更新。相关第三方程序和补丁适用各自开源许可证，Eta 主项目的非商业许可证不限制这些独立第三方程序授予的权利；详见[第三方声明](THIRD_PARTY_NOTICES.md)。
+源码包与重新生成的二进制需要一起更新。相关第三方程序和补丁适用各自开源许可证，EtaX 主项目的非商业许可证不限制这些独立第三方程序授予的权利；详见[第三方声明](THIRD_PARTY_NOTICES.md)。

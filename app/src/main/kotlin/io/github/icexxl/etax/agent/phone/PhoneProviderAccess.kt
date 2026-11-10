@@ -92,7 +92,7 @@ internal class RootPhoneProviderAccess(private val userId: Int) : PhoneProviderA
                     authority,
                     userId,
                     token,
-                    "Eta",
+                    "EtaX",
                 ) ?: PhoneOperation.error("PHONE_PROVIDER_UNAVAILABLE", "系统未提供该应用接口")
             provider =
                 holder.javaClass.getField("provider").get(holder)

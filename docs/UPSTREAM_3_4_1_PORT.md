@@ -1,4 +1,4 @@
-# Eta 3.4.1 → EtaX 1.7.0 移植记录
+# Eta 3.4.1 → EtaX 1.7.1 移植记录
 
 ## 基线与备份
 
@@ -40,6 +40,6 @@
 
 ## 验证边界
 
-2026-11-10 最终源码验证：2049 项单测，0 失败/错误、2 跳过；Debug Kotlin 编译、lint 与签名 Release 构建通过。APK 为 `io.github.icexxl.etax` / 1.7.0 / versionCode 10035，证书 SHA-256 与之前版本相同（2770976aff825448ce3bcfaf59f29fc9173d39313afacea21eb5a8c40d006a3f）。
+2026-11-10 最终源码验证：2049 项单测，0 失败/错误、2 跳过；Debug Kotlin 编译、lint 与签名 Release 构建通过。APK 为 `io.github.icexxl.etax` / 1.7.1 / versionCode 10036，证书 SHA-256 与之前版本相同（2770976aff825448ce3bcfaf59f29fc9173d39313afacea21eb5a8c40d006a3f）。
 
 测试覆盖两套界面与数据库迁移，但不等于真机图形和 OEM 行为验证。Shizuku、Root、LSPosed 的焦点/输入法策略以及后台恢复仍应按 `VIRTUAL_DISPLAY.md` 在实际设备验证。本次构建时 ADB 无连接设备，未安装或执行真机验收。

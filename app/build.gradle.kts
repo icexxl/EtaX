@@ -39,8 +39,8 @@ android {
         minSdk = 33
         targetSdk = 37
         // EtaX 保持自己的单调版本序列，不采用上游日期版本号。
-        versionCode = 10035
-        versionName = "1.7.0"
+        versionCode = 10036
+        versionName = "1.7.1"
 
         ndk {
             // 同时过滤本地与依赖 AAR 的原生库，确保 APK 仅包含 ARM64。

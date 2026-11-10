@@ -1,16 +1,16 @@
-# Eta 发布流程
+# EtaX 发布流程
 
 ## 配置签名 Secrets
 
 发布证书和密码不得提交到 Git。首次使用前，在仓库的
 `Settings > Secrets and variables > Actions` 中添加：
 
-- `ETA_RELEASE_KEYSTORE_BASE64`：发布证书的 Base64 文本
+- `ETA_RELEASE_KEYSTORE_BASE64`：EtaX 发布证书的 Base64 文本（与既有 EtaX 版本保持一致，换证书会导致无法覆盖安装）
 - `ETA_RELEASE_STORE_PASSWORD`：KeyStore 密码
 - `ETA_RELEASE_KEY_ALIAS`：Key alias
 - `ETA_RELEASE_KEY_PASSWORD`：Key 密码
 
-macOS 可以用下面的命令复制证书的 Base64 文本：
+macOS 可以用下面的命令复制 EtaX 发布证书的 Base64 文本：
 
 ```bash
 base64 < /path/to/Eta-release.jks | tr -d '\n' | pbcopy

@@ -1,4 +1,4 @@
-name: Eta Build
+name: EtaX Build
 
 on:
   push:
