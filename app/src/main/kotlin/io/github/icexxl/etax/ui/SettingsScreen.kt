@@ -790,14 +790,14 @@ private fun SettingsPageContent(
                                 SettingsIconColors.Orange,
                             )
                         },
-                        onClick = { openUrl("https://github.com/icexxl/Eta-message/issues") },
+                        onClick = { openUrl("https://github.com/icexxl/EtaX/issues") },
                     )
                     CouiIconDivider()
                     CouiPreference(
                         title = stringResource(R.string.ui_about_github_star_title),
                         summary = stringResource(R.string.ui_about_github_star_hint),
                         icon = { CouiSettingsIcon(Icons.Rounded.Code, SettingsIconColors.Blue) },
-                        onClick = { openUrl("https://github.com/icexxl/Eta-message") },
+                        onClick = { openUrl("https://github.com/icexxl/EtaX") },
                     )
                 }
 
@@ -1291,7 +1291,7 @@ private fun SettingsPageContent(
                                     tint = SettingsIconColors.Orange,
                                 )
                             },
-                            onClick = { openUrl("https://github.com/icexxl/Eta-message/issues") },
+                            onClick = { openUrl("https://github.com/icexxl/EtaX/issues") },
                         )
                         ArrowPreference(
                             title = stringResource(R.string.ui_about_github_star_title),
@@ -1302,7 +1302,7 @@ private fun SettingsPageContent(
                                     tint = SettingsIconColors.Blue,
                                 )
                             },
-                            onClick = { openUrl("https://github.com/icexxl/Eta-message") },
+                            onClick = { openUrl("https://github.com/icexxl/EtaX") },
                         )
                     }
                 }

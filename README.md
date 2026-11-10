@@ -1,6 +1,6 @@
 <h1 align="center">EtaX</h1>
 
-> 此仓库为 [icexxl/Eta-message](https://github.com/icexxl/Eta-message) 个人分支，应用 ID 为 `io.github.icexxl.etax`。EtaX 1.7.1 已移植 Eta 3.4.1 的功能更新，并保留 OpenClaw、Shizuku 免 Root 副屏、光幕/文字动效、后台回复提醒及原四色图标。下文保留 Eta 上游的项目介绍与署名；其中指向 `Mangi-11/Eta` 的下载与演示属于上游版本，不是 EtaX 安装包。整合记录见 [移植说明](docs/UPSTREAM_3_4_1_PORT.md)。上游仅作只读参考，本分支不向上游提交 PR、issue 或补丁。
+> 此仓库为 [icexxl/EtaX](https://github.com/icexxl/EtaX) 个人分支，应用 ID 为 `io.github.icexxl.etax`。EtaX 1.7.1 已移植 Eta 3.4.1 的功能更新，并保留 OpenClaw、Shizuku 免 Root 副屏、光幕/文字动效、后台回复提醒及原四色图标。下文保留 Eta 上游的项目介绍与署名；其中指向 `Mangi-11/Eta` 的下载与演示属于上游版本，不是 EtaX 安装包。整合记录见 [移植说明](docs/UPSTREAM_3_4_1_PORT.md)。上游仅作只读参考，本分支不向上游提交 PR、issue 或补丁。
 
 <p align="center"><strong>简体中文</strong> | <a href="README_EN.md">English</a></p>
 
