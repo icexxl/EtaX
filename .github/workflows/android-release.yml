@@ -95,10 +95,10 @@ jobs:
       - name: 验证并整理 APK
         id: apk
         run: |
-          # 文件名由 Gradle 按 versionName 生成，例如 Eta-vX.Y.Z.apk、Eta-vX.Y.Z-debug+<sha>.apk
+          # 文件名由 Gradle 按 versionName 生成，例如 EtaX-vX.Y.Z.apk、EtaX-vX.Y.Z-debug+<sha>.apk
           shopt -s nullglob
-          debug_apks=(app/build/outputs/apk/debug/Eta-v*.apk)
-          release_apks=(app/build/outputs/apk/release/Eta-v*.apk)
+          debug_apks=(app/build/outputs/apk/debug/EtaX-v*.apk)
+          release_apks=(app/build/outputs/apk/release/EtaX-v*.apk)
           apksigner_path="$(find "$ANDROID_HOME/build-tools" \
             -type f -name apksigner | sort -V | tail -n 1)"
 
@@ -158,18 +158,18 @@ jobs:
     steps:
       # 未压缩上传的 Artifact 以文件名命名。文件名不经 job outputs 传递：
       # 输出值只要包含任一 Secret 的子串就会被 Actions 整体丢弃，下载步骤随之退化为下载全部产物。
-      # 标签已在构建 job 中校验等于 v<versionName>，Gradle 产物名为 Eta-v<versionName>.apk，可直接由标签推导。
+      # 标签已在构建 job 中校验等于 v<versionName>，Gradle 产物名为 EtaX-v<versionName>.apk，可直接由标签推导。
       - name: 下载 Release APK
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: Eta-${{ github.ref_name }}.apk
+          name: EtaX-${{ github.ref_name }}.apk
           path: ${{ runner.temp }}/release
 
       # 只建草稿：草稿不会出现在 releases/latest，App 内更新检查要等维护者手动发布后才可见
       - name: 创建 Release 草稿
         env:
           GH_TOKEN: ${{ github.token }}
-          APK_PATH: ${{ runner.temp }}/release/Eta-${{ github.ref_name }}.apk
+          APK_PATH: ${{ runner.temp }}/release/EtaX-${{ github.ref_name }}.apk
         run: >-
           gh release create "$GITHUB_REF_NAME" "$APK_PATH"
           --repo "$GITHUB_REPOSITORY"

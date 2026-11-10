@@ -142,7 +142,7 @@ androidComponents {
     onVariants { variant ->
         // 文件名只取 versionName：构建类型标记与 CI 构建元数据都由 versionNameSuffix 带出
         variant.outputs.forEach { output ->
-            output.outputFileName.set(output.versionName.map { "Eta-v$it.apk" })
+            output.outputFileName.set(output.versionName.map { "EtaX-v$it.apk" })
         }
     }
 }

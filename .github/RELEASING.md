@@ -13,13 +13,13 @@
 macOS 可以用下面的命令复制 EtaX 发布证书的 Base64 文本：
 
 ```bash
-base64 < /path/to/Eta-release.jks | tr -d '\n' | pbcopy
+base64 < /path/to/EtaX-release.jks | tr -d '\n' | pbcopy
 ```
 
 也可以使用 GitHub CLI。密码类 Secret 不要直接写在命令参数中，运行命令后按提示输入：
 
 ```bash
-base64 < /path/to/Eta-release.jks | gh secret set ETA_RELEASE_KEYSTORE_BASE64
+base64 < /path/to/EtaX-release.jks | gh secret set ETA_RELEASE_KEYSTORE_BASE64
 gh secret set ETA_RELEASE_STORE_PASSWORD
 gh secret set ETA_RELEASE_KEY_ALIAS
 gh secret set ETA_RELEASE_KEY_PASSWORD
@@ -41,12 +41,12 @@ gh secret set ETA_RELEASE_KEY_PASSWORD
 
 - 向 `main` 推送提交
 - 推送 `v*` 标签
-- 在 GitHub 的 `Actions > Eta Build` 中手动运行
+- 在 GitHub 的 `Actions > EtaX Build` 中手动运行
 
 同一工作流会并行执行 Lint 与单元测试。检查失败不影响 APK 上传，但推送标签时不会创建
 Release 草稿。
 
-非标签构建会在版本名后追加 SemVer 构建元数据 `+<短提交号>`，例如 `Eta-v3.2.0+a1b2c3d.apk`，
+非标签构建会在版本名后追加 SemVer 构建元数据 `+<短提交号>`，例如 `EtaX-v3.2.0+a1b2c3d.apk`，
 用于区分同一版本号下的不同构建；只有标签构建产出不带后缀的正式版本名。Actions Artifact
 需要登录才能下载且到期失效，仅供开发测试，面向用户的分发只使用 GitHub Releases。
 
@@ -63,8 +63,8 @@ git tag v2.2.2
 git push origin v2.2.2
 ```
 
-标签推送后，等待 `Eta Build` 工作流完成，然后：
+标签推送后，等待 `EtaX Build` 工作流完成，然后：
 
-1. 在仓库的 `Releases` 中打开 `vX.Y.Z` 草稿，确认附件为 `Eta-vX.Y.Z.apk`。
+1. 在仓库的 `Releases` 中打开 `vX.Y.Z` 草稿，确认附件为 `EtaX-vX.Y.Z.apk`。
 2. 改写发布说明。
 3. 检查版本、说明和附件后，由维护者手动发布。
