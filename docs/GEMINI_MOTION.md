@@ -1,6 +1,6 @@
 # Gemini 回复动效拆解（EtaX 实现依据）
 
-样本：`VID_20261109_221005.mp4`（40.8s，566×1300）与 APKM `com.google.android.apps.bard 1.0.995038376`。
+样本：`VID_20261109_221005.mp4`（40.8s，566×1300，本地样本已清理）与 APKM `com.google.android.apps.bard 1.0.995038376`。
 
 ## APK 结论
 
