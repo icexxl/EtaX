@@ -263,7 +263,17 @@ internal class RootShellDeviceController(
         return Observation(json.toString(), image, elementObservation, coordinateSpace)
     }
 
+    private fun virtualGestureResult(tool: String, ok: Boolean): String {
+        if (!ok) return errorJson("VIRTUAL_DISPLAY_INPUT_FAILED", "副屏输入失败，未在主屏执行")
+        waitForUiSettle(tool)
+        return okJson(tool, "shizuku_vscreen")
+    }
+
     fun tap(x: Int, y: Int, displayId: Int = Display.DEFAULT_DISPLAY): String {
+        if (VirtualDisplayController.isShellDisplay(displayId)) {
+            validatePoint(x, y, displayId)
+            return virtualGestureResult("tap", VirtualDisplayController.injectBackendTap(displayId, x, y))
+        }
         if (AgentAccessibilityService.current() == null && !rootAvailable()) return accessibilityUnavailable()
         validatePoint(x, y, displayId)
         AgentAccessibilityService.current()?.let { service ->
@@ -281,6 +291,10 @@ internal class RootShellDeviceController(
     }
 
     fun longPress(x: Int, y: Int, durationMs: Int, displayId: Int = Display.DEFAULT_DISPLAY): String {
+        if (VirtualDisplayController.isShellDisplay(displayId)) {
+            validatePoint(x, y, displayId)
+            return virtualGestureResult("long_press", VirtualDisplayController.injectBackendSwipe(displayId, x, y, x, y, durationMs.coerceIn(300, 3_000)))
+        }
         if (AgentAccessibilityService.current() == null && !rootAvailable()) return accessibilityUnavailable()
         validatePoint(x, y, displayId)
         val duration = durationMs.coerceIn(300, 3_000)
@@ -306,6 +320,11 @@ internal class RootShellDeviceController(
         durationMs: Int,
         displayId: Int = Display.DEFAULT_DISPLAY,
     ): String {
+        if (VirtualDisplayController.isShellDisplay(displayId)) {
+            validatePoint(x1, y1, displayId)
+            validatePoint(x2, y2, displayId)
+            return virtualGestureResult("swipe", VirtualDisplayController.injectBackendSwipe(displayId, x1, y1, x2, y2, durationMs.coerceIn(100, 2_000)))
+        }
         if (AgentAccessibilityService.current() == null && !rootAvailable()) return accessibilityUnavailable()
         validatePoint(x1, y1, displayId)
         validatePoint(x2, y2, displayId)
@@ -527,7 +546,9 @@ internal class RootShellDeviceController(
         if (isVirtual && normalized in setOf("NOTIFICATIONS", "QUICK_SETTINGS")) {
             return errorJson("MAIN_DISPLAY_ONLY", "$normalized 只能在物理主屏打开")
         }
-        if (isVirtual && !rootAvailable() && normalized in setOf("BACK", "HOME", "RECENTS")) {
+        if (isVirtual && (!rootAvailable() || VirtualDisplayController.isShellDisplay(displayId)) &&
+            normalized in setOf("BACK", "HOME", "RECENTS")
+        ) {
             // Accessibility GLOBAL_ACTION always targets the physical display. Never invoke it
             // while the agent is operating a background virtual display.
             val keyCode = when (normalized) {
@@ -536,7 +557,7 @@ internal class RootShellDeviceController(
                 else -> KeyEvent.KEYCODE_APP_SWITCH
             }
             return if (VirtualDisplayController.injectShellKey(displayId, keyCode)) {
-                JSONObject(okJson("press_key", "shell_helper"))
+                JSONObject(okJson("press_key", "shizuku_vscreen"))
                     .put("button", normalized).toString()
             } else {
                 errorJson("VIRTUAL_DISPLAY_INPUT_FAILED", "无法向虚拟屏定向发送 $normalized")

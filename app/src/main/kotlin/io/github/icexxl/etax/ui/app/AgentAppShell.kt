@@ -475,7 +475,7 @@ private fun TopBarOverflowMenu(
 private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.Home, is AppRoute.Browser -> ""
     is AppRoute.OpenClaw -> "OpenClaw"
-    is AppRoute.ShellHelper -> "免 Root 虚拟屏"
+    is AppRoute.VirtualScreen -> "免 Root 虚拟屏"
     is AppRoute.Terminal -> stringResource(R.string.route_terminal)
     is AppRoute.Tools -> stringResource(R.string.route_tools)
     is AppRoute.WebToolsSettings -> stringResource(R.string.web_tools_settings_title)

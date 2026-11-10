@@ -898,8 +898,7 @@ internal class AgentLocalTools(
             backendAvailable = VirtualDisplayController.isBackendAvailable(
                 rootAvailable = rootAvailable(),
                 lsposedAvailable = lsposedAvailable(),
-                shellAvailable = io.github.icexxl.etax.channel.shell.EtaShellConnection
-                    .isConnected(requireContext()),
+                shellAvailable = io.github.icexxl.etax.channel.vscreen.VScreenBackend.isReady(),
             ),
             requested = requestedDisplay,
             targetPackage = app.packageName,
@@ -956,11 +955,11 @@ internal class AgentLocalTools(
         val reason = args.optString("reason").trim()
         val vdSnapshot = VirtualDisplayController.snapshots.value
         val wasVirtual = vdSnapshot.active || CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId)
-        // 有 shell 助手（免 Root）时只把任务挪到主屏、保留虚拟屏，
+        // Shizuku 副屏只把任务挪到主屏、保留副屏，
         // 用户处理完还能用 take_back_from_user 挪回来继续；别的后端沿用整屏移交。
         val shellConnected = wasVirtual &&
             VirtualDisplayController.isShellDisplay(vdSnapshot.displayId) &&
-            io.github.icexxl.etax.channel.shell.EtaShellConnection.isConnected(context)
+            io.github.icexxl.etax.channel.vscreen.VScreenBackend.isReady()
         val presented = when {
             shellConnected -> VirtualDisplayController.handOverTopTaskToUser(context)
             wasVirtual -> VirtualDisplayController.handoffToMainDisplay(context, rootAvailable)
@@ -1031,8 +1030,7 @@ internal class AgentLocalTools(
             backendAvailable = VirtualDisplayController.isBackendAvailable(
                 rootAvailable = rootAvailable(),
                 lsposedAvailable = lsposedAvailable(),
-                shellAvailable = io.github.icexxl.etax.channel.shell.EtaShellConnection
-                    .isConnected(requireContext()),
+                shellAvailable = io.github.icexxl.etax.channel.vscreen.VScreenBackend.isReady(),
             ),
             requested = requestedDisplay,
             targetPackage = resolvedPkg,

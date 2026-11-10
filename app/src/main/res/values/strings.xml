@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <resources>
+    <string name="reply_ready_title">Reply ready</string>
+    <string name="reply_ready_detail">Open EtaX to read the reply</string>
+    <string name="reply_ready_chip">Replied</string>
+
     <string name="conversation_stop_and_delete">Stop task and delete</string>
     <string name="conversation_stop_and_delete_message">The task in this conversation will stop first. The conversation will be deleted after its results are saved.</string>
     <string name="conversation_delete_save_failed">Could not save or confirm the task results. The conversation has not been deleted.</string>
@@ -16,7 +20,6 @@
     <string name="overlay_virtual_continue">Continue</string>
     <string name="overlay_virtual_fullscreen">Fullscreen</string>
     <string name="overlay_virtual_collapse">Collapse stage</string>
-    <string name="overlay_result_open_virtual_app">Open screen</string>
   <string name="permission_local_network_title">Local network access</string>
   <string name="permission_local_network_summary">Allow models, MCP, the built-in browser and terminals to access your local network when needed. Internet access remains available without this permission.</string>
   <string name="permission_local_network_denied">Local network access was not granted. You can allow Nearby devices in the system app permission settings when you need a local service. Internet access remains available.</string>
@@ -24,7 +27,7 @@
   <string name="settings_language">Language</string>
   <string name="settings_language_system">Follow system</string>
   <string name="app_name">Eta</string>
-  <string name="app_name_etax">EtaX</string>
+  <string name="app_name_etax" translatable="false">EtaX</string>
   <string name="xposed_description">A system-level AI agent that takes over Breeno and Super XiaoAI, enables Gemini and Circle to Search, and integrates browser, terminal, and device tools.</string>
   <string name="agent_accessibility_label">Eta Agent</string>
   <string name="agent_accessibility_description">Read screen content and perform taps, swipes, text input, and other actions to help the agent complete tasks.</string>

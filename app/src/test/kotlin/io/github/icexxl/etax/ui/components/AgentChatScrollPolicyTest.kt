@@ -7,6 +7,15 @@ import org.junit.Test
 
 class AgentChatScrollPolicyTest {
     @Test
+    fun longAnswerPausesAtActualViewportHeight() {
+        assertFalse(shouldPauseLongAnswerFollow(null, 800))
+        assertFalse(shouldPauseLongAnswerFollow(900, 0))
+        assertFalse(shouldPauseLongAnswerFollow(799, 800))
+        assertFalse(shouldPauseLongAnswerFollow(800, 800))
+        assertTrue(shouldPauseLongAnswerFollow(801, 800))
+    }
+
+    @Test
     fun networkCompletionKeepsFollowingUntilRenderedTailSettles() {
         assertTrue(
             resolveBottomFollowEnabled(

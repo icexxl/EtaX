@@ -105,6 +105,7 @@ import kotlin.math.min
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
@@ -233,10 +234,17 @@ internal fun AgentChatBody(
             val turnStart = messages.indexOfLast { it is UserMessageUi } + 1
             val turn = messages.subList(turnStart.coerceAtMost(messages.size), messages.size)
             val last = turn.lastOrNull()
-            last is AgentMessageUi && last.isStreaming && last.content.isNotBlank()
+            last is AgentMessageUi && last.content.isNotBlank()
         }
     }
-    val auroraThinking = isStreaming && !answerStarted
+    // Once an answer starts, terminal message flags/tool-row updates cannot restart the glow.
+    val auroraTurnKey = messages.lastOrNull { it is UserMessageUi }?.id
+    var answerSeen by remember(auroraTurnKey) { mutableStateOf(false) }
+    LaunchedEffect(isStreaming, answerStarted) {
+        if (!isStreaming) answerSeen = false
+        else if (answerStarted) answerSeen = true
+    }
+    val auroraThinking = isStreaming && !answerStarted && !answerSeen
     LaunchedEffect(auroraThinking) {
         AuroraMood.thinking.value = auroraThinking
     }
@@ -553,6 +561,27 @@ internal fun AgentConversationMessages(
         initialBottomApplied = true
         onBottomAnchorChanged(true)
     }
+    // A long answer is a reading surface, not a ticker. Latch once per user turn,
+    // including the rendering tail after network completion.
+    val readingTurnId = visibleMessages.lastOrNull { it is UserMessageUi }?.id
+    var longAnswerPaused by rememberSaveable(readingTurnId) { mutableStateOf(false) }
+    val turnStartIndex = visibleMessages.indexOfLast { it is UserMessageUi }
+    val currentAnswerId = visibleMessages.drop(turnStartIndex + 1).lastOrNull { it is AgentMessageUi }?.id
+    val answerExceedsViewport by remember(scrollState, currentAnswerId) {
+        derivedStateOf {
+            val layout = scrollState.layoutInfo
+            val available = layout.viewportEndOffset - layout.viewportStartOffset -
+                layout.beforeContentPadding - layout.afterContentPadding
+            val answer = layout.visibleItemsInfo.firstOrNull { it.key == currentAnswerId }
+            shouldPauseLongAnswerFollow(answer?.size, available)
+        }
+    }
+    LaunchedEffect(answerExceedsViewport) {
+        if (answerExceedsViewport) {
+            longAnswerPaused = true
+            onBottomAnchorChanged(false)
+        }
+    }
     val isUserDragging by scrollState.interactionSource.collectIsDraggedAsState()
     val isAtBottom by remember(scrollState) {
         derivedStateOf { !scrollState.canScrollForward }
@@ -570,14 +599,18 @@ internal fun AgentConversationMessages(
         isUserDragging,
         isAtBottom,
         keepBottomAnchored,
+        longAnswerPaused,
     ) {
-        if (!isListMeasured) return@LaunchedEffect
+        if (!isListMeasured || longAnswerPaused || answerExceedsViewport) return@LaunchedEffect
         val next = resolveKeepBottomAnchored(
             current = keepBottomAnchored,
             isUserDragging = isUserDragging,
             isAtBottom = isAtBottom,
         )
         if (next != keepBottomAnchored) {
+            // Pause immediately on touch; resume only after the reader has settled at the bottom.
+            // The effect is cancelled if content growth or another drag changes these inputs.
+            if (next) delay(BOTTOM_FOLLOW_STABLE_DELAY_MS)
             onBottomAnchorChanged(next)
         }
     }
@@ -596,8 +629,8 @@ internal fun AgentConversationMessages(
     }
     var isBottomSettling by remember { mutableStateOf(isStreaming) }
 
-    LaunchedEffect(isStreaming, isTailRendering, keepBottomAnchored, isUserDragging) {
-        if (!keepBottomAnchored || isUserDragging) {
+    LaunchedEffect(isStreaming, isTailRendering, keepBottomAnchored, isUserDragging, longAnswerPaused, answerExceedsViewport) {
+        if (!keepBottomAnchored || isUserDragging || longAnswerPaused || answerExceedsViewport) {
             isBottomSettling = false
         } else if (isStreaming || isTailRendering) {
             isBottomSettling = true
@@ -626,7 +659,7 @@ internal fun AgentConversationMessages(
     )
 
     val shouldFollowBottom by rememberUpdatedState(
-        resolveBottomFollowEnabled(
+        !longAnswerPaused && !answerExceedsViewport && resolveBottomFollowEnabled(
             isStreaming = isStreaming,
             keepBottomAnchored = keepBottomAnchored,
             isUserDragging = isUserDragging,
@@ -644,7 +677,7 @@ internal fun AgentConversationMessages(
         isUserDragging,
         isStreaming,
     ) {
-        if (shouldRequestInitialBottom(
+        if (!longAnswerPaused && !answerExceedsViewport && shouldRequestInitialBottom(
                 isStreaming = isStreaming,
                 keepBottomAnchored = keepBottomAnchored,
                 isUserDragging = isUserDragging,
@@ -857,8 +890,18 @@ internal fun AgentConversationMessages(
             }
         }
 
+        var showJumpToLatest by remember { mutableStateOf(false) }
+        LaunchedEffect(keepBottomAnchored, isAtBottom, isUserDragging, longAnswerPaused) {
+            if ((keepBottomAnchored && !longAnswerPaused) || isAtBottom) {
+                showJumpToLatest = false
+            } else {
+                // Wait out short layout/scroll transients before offering the quiet return affordance.
+                delay(BOTTOM_FOLLOW_STABLE_DELAY_MS)
+                showJumpToLatest = true
+            }
+        }
         AnimatedVisibility(
-            visible = !keepBottomAnchored && !isAtBottom,
+            visible = showJumpToLatest,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = bottomInset + 12.dp),
@@ -1154,6 +1197,7 @@ private fun AgentChatBottomBar(
 
 private val ChatBottomFrostHeight = 24.dp
 
+private const val BOTTOM_FOLLOW_STABLE_DELAY_MS = 180L
 private const val BOTTOM_FOLLOW_RESPONSE_SECONDS = 0.085f
 private const val BOTTOM_FOLLOW_MAX_FRAME_SECONDS = 0.05f
 private const val BOTTOM_FOLLOW_MAX_SPEED_DP_PER_SECOND = 720f
@@ -1328,3 +1372,7 @@ private data class SuggestionItem(
     val icon: ImageVector,
     val prompt: String,
 )
+
+/** Compare laid-out answer height with the reading viewport, not token/character counts. */
+internal fun shouldPauseLongAnswerFollow(answerHeightPx: Int?, viewportHeightPx: Int): Boolean =
+    viewportHeightPx > 0 && answerHeightPx != null && answerHeightPx > viewportHeightPx

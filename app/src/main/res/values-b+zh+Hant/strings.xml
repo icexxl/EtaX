@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <resources>
+    <string name="reply_ready_title">EtaX 已回覆</string>
+    <string name="reply_ready_detail">點擊查看本次對話的回覆</string>
+    <string name="reply_ready_chip">已回覆</string>
+
   <string name="conversation_stop_and_delete">停止任務並刪除</string>
   <string name="conversation_stop_and_delete_message">此對話的任務將先停止，結果儲存後刪除對話。</string>
   <string name="conversation_delete_save_failed">無法儲存或確認任務結果，對話尚未刪除。</string>
@@ -16,7 +20,6 @@
   <string name="overlay_virtual_continue">繼續</string>
   <string name="overlay_virtual_fullscreen">全螢幕</string>
   <string name="overlay_virtual_collapse">收起畫板</string>
-  <string name="overlay_result_open_virtual_app">開啟畫面</string>
   <string name="browser_clear_shared_data">清除所有瀏覽器資料</string>
   <string name="browser_clear_shared_data_message">將關閉所有頁面，清除 Cookie、快取和網站資料，包括登入狀態。</string>
   <string name="browser_user_action_failed">瀏覽器操作未完成，請重試。</string>

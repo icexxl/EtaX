@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <uses-permission android:name="android.permission.READ_ASSIST_STRUCTURE_SCREEN_CONTENT" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -186,13 +187,13 @@
             </intent-filter>
         </service>
 
-        <!-- 接收 shell 助手交回的 Binder；只允许 shell(uid 2000) 调用，握手时再校验口令 -->
+        <!-- Shizuku distributes the authorized daemon Binder; no local ADB pairing provider. -->
         <provider
-            android:name="io.github.icexxl.etax.channel.shell.HelperHubProvider"
-            android:authorities="${applicationId}.helper"
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
             android:exported="true"
-            android:grantUriPermissions="false"
-            android:permission="android.permission.DUMP" />
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

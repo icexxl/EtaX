@@ -303,8 +303,6 @@ internal fun AgentResultCard(
     state: AgentOverlayState,
     onClose: () -> Unit,
     onOpenEta: () -> Unit,
-    hasVirtualDisplayApp: Boolean = false,
-    onOpenVirtualApp: (() -> Unit)? = null,
 ) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
@@ -449,8 +447,6 @@ internal fun AgentResultCard(
                     content = content,
                     onOpenEta = onOpenEta,
                     onDone = ::close,
-                    hasVirtualDisplayApp = hasVirtualDisplayApp,
-                    onOpenVirtualApp = onOpenVirtualApp,
                 )
             }
         }
@@ -462,8 +458,6 @@ private fun ResultCardActions(
     content: String,
     onOpenEta: () -> Unit,
     onDone: () -> Unit,
-    hasVirtualDisplayApp: Boolean = false,
-    onOpenVirtualApp: (() -> Unit)? = null,
 ) {
     @Suppress("DEPRECATION")
     val clipboard = LocalClipboardManager.current
@@ -478,7 +472,7 @@ private fun ResultCardActions(
         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        // 复制是图标按钮，主次两个文字按钮分别是"完成"（留在当前应用）与"回到 Eta"或"打开画面"。
+        // 结果入口始终回到 EtaX 会话；虚拟屏任务的接管由画布中的独立入口处理。
         IconButton(
             onClick = {
                 clipboard.setText(AnnotatedString(content))
@@ -502,23 +496,13 @@ private fun ResultCardActions(
             modifier = Modifier.weight(1f),
             minHeight = 44.dp,
         )
-        if (hasVirtualDisplayApp && onOpenVirtualApp != null) {
-            TextButton(
-                text = stringResource(R.string.overlay_result_open_virtual_app),
-                onClick = onOpenVirtualApp,
-                modifier = Modifier.weight(1f),
-                minHeight = 44.dp,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-            )
-        } else {
-            TextButton(
-                text = stringResource(R.string.overlay_result_open_eta),
-                onClick = onOpenEta,
-                modifier = Modifier.weight(1f),
-                minHeight = 44.dp,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-            )
-        }
+        TextButton(
+            text = stringResource(R.string.overlay_result_open_eta),
+            onClick = onOpenEta,
+            modifier = Modifier.weight(1f),
+            minHeight = 44.dp,
+            colors = ButtonDefaults.textButtonColorsPrimary(),
+        )
     }
 }
 

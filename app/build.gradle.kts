@@ -39,8 +39,8 @@ android {
         minSdk = 33
         targetSdk = 37
         // versionCode 规则：yyyyMMdd + 两位当日序号（01 起），发版时随 versionName 一起手动递增。
-        versionCode = 10024
-        versionName = "1.5.5"
+        versionCode = 10034
+        versionName = "1.6.7"
 
         ndk {
             // 同时过滤本地与依赖 AAR 的原生库，确保 APK 仅包含 ARM64。
@@ -85,7 +85,6 @@ android {
     }
 
     buildFeatures {
-        aidl = true
         buildConfig = true
         compose = true
     }
@@ -170,6 +169,9 @@ dependencies {
     // 只使用 GFM 解析器；聊天渲染层由 ui/markdown 自建，按块冻结并接入逐字显现。
     implementation(libs.intellij.markdown)
     implementation(libs.hidden.api.bypass)
+    // Agent-VScreen's daemon backend: Shizuku owns the privileged process lifecycle.
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 
     // DataStore：Provider / Model 结构化 JSON 与当前选中 ID 等键值
     implementation(libs.datastore.preferences)

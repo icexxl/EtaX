@@ -119,6 +119,7 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         startedInstances.add(this)
         isInForeground = true
+        io.github.icexxl.etax.agent.runtime.AgentReplyNotification.clear(this)
         AgentRuntimeService.onEtaUiVisibilityChanged()
     }
 

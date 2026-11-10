@@ -1,5 +1,11 @@
 # 第三方声明
 
+## Agent-VScreen
+
+EtaX 的 Shizuku 副屏服务移植自 [Agent-VScreen](https://github.com/kilolonion/agent-vscreen)，基于提交 `7e2e01491797848a82bb8bfe611842fb87fb9d10`，版权 © 2026 kilolonion，采用 MIT License。迁移保留副屏建屏、Surface 重绑定、输入和任务管理，未引入其 HTTP/MCP 服务。许可全文随 APK 保存于 `assets/licenses/agent-vscreen-MIT.txt`。
+
+特权进程由 [Shizuku](https://github.com/RikkaApps/Shizuku) 的 API/provider（13.1.5，Apache-2.0）管理。旧 Mika 派生的无线 ADB 配对与助手实现已移除。
+
 ## 终端原生组件
 
 Eta 的免 Root Linux 后端以独立进程运行 [PRoot](https://github.com/termux/proot)，并静态链接 [talloc](https://talloc.samba.org/) 与 [libandroid-shmem](https://github.com/termux/libandroid-shmem)。PRoot 源码采用 GPL-2.0-or-later；talloc 采用 LGPL-3.0-or-later；libandroid-shmem 采用 BSD-3-Clause。附带的组合 PRoot 可执行程序按 GPL-3.0-or-later 分发，各组件版权与许可证保留。

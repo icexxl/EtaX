@@ -57,8 +57,7 @@ internal object AuroraMood {
 /** 空闲时输入框附近那层淡蓝。 */
 private val IdleGlow = Color(0xFF15286A)
 
-// 色相环关键帧，取自 Gemini 实拍（60fps 逐帧，顶部 12~20% 中位色）。
-// 一圈约 5.2s，单向前进，经紫色回到蓝色，所以循环没有接缝。
+// 保留原有深色配色；首尾同色，单向循环没有接缝。
 private val LapColors = listOf(
     0.00f to Color(0xFF1D3674), // 深蓝
     0.12f to Color(0xFF163E60), // 蓝→青
@@ -74,27 +73,12 @@ private val LapColors = listOf(
     1.00f to Color(0xFF1D3674),
 )
 
-// 完成时的收尾：蓝 → 青 → 绿 → 黄绿，约 1.4s
-private val FinishColors = listOf(
-    0.00f to Color(0xFF1D3674),
-    0.20f to Color(0xFF143D5A),
-    0.36f to Color(0xFF104F41),
-    0.55f to Color(0xFF146624),
-    0.80f to Color(0xFF2D7014),
-    1.00f to Color(0xFF426413),
-)
-
-private const val LAP_SECONDS = 4.3f
+// 录屏实测：色相每 8 秒走完一圈，每圈按 S 曲线缓动（首尾慢、中段快）。
+private const val LAP_SECONDS = 8f
 private const val FADE_IN_SECONDS = 0.25f
-private const val FINISH_SECONDS = 1.4f
-private const val FADE_OUT_SECONDS = 0.6f
-// 左边缘领先右边缘的时间（实测 0.7s）
-private const val SWEEP_LAG = 0f
-
-private fun ease(x: Float): Float {
-    val f = x.coerceIn(0f, 1f)
-    return f * f * (3f - 2f * f)
-}
+// 录屏实测：同一时刻左右色相差在缓动中段约 18–26°，到底部平台段收敛到 1–7°。
+// 这说明各列走的是同一条 S 曲线、只是起点依次延迟，而不是固定的空间坡道。
+private const val COLUMN_LAG_SECONDS = 0.4f
 
 private fun sample(stops: List<Pair<Float, Color>>, x: Float): Color {
     val f = x.coerceIn(0f, 1f)
@@ -109,16 +93,25 @@ private fun sample(stops: List<Pair<Float, Color>>, x: Float): Color {
     return stops.last().second
 }
 
-/** 生成中第 t 秒的颜色：先停在蓝，然后沿色相环循环。 */
-private fun streamingColor(t: Float): Color {
-    if (t < 1.0f) return LapColors.first().second
-    val lap = ((t - 1.0f) / LAP_SECONDS) % 1f
-    return sample(LapColors, lap)
+/**
+ * 单圈缓动：把 0→1 的线性进度压成 S 曲线（smoothstep），首尾速度为 0、中点最快。
+ * 每一列都用这条曲线，只是起始时间不同，于是形成一道向前推进的色带。
+ */
+internal fun lapEase(seconds: Float): Float {
+    val f = ((seconds.coerceAtLeast(0f) / LAP_SECONDS) % 1f)
+    return f * f * (3f - 2f * f)
 }
+
+/** 某一列在屏幕横坐标 x∈[0,1] 上的缓动相位；右侧比左侧晚 [COLUMN_LAG_SECONDS] 起步。 */
+internal fun columnLapEase(t: Float, x: Float): Float =
+    lapEase((t - COLUMN_LAG_SECONDS * x.coerceIn(0f, 1f)).coerceAtLeast(0f))
+
+/** 归一化相位对应的配色。 */
+private fun paletteAt(phase: Float): Color = sample(LapColors, ((phase % 1f) + 1f) % 1f)
 
 /**
  * 光幕着色器（AGSL）：顶部一整片弥散渐变（mesh/diffuse gradient）。
- * - 横向：9 个色标平滑插值，整片同时出现、同时变色（不再从左往右错峰淡入）
+ * - 横向：9 个色标平滑插值，颜色由左向右依次过渡
  * - 弥散：叠 3 团大而柔的光，各自缓慢漂移，相邻颜色互相晕开
  * - 纵向：顶部满亮，往下柔和淡到黑；下沿是一条轻微起伏、缓慢漂移的曲线
  * 每个像素单独计算，没有分层叠加，所以不会出现台阶或竖缝。
@@ -150,8 +143,8 @@ half4 main(float2 fc) {
 
     // 下沿（占屏高）：中间略垂、两侧略收，叠两道慢速横向漂移的长波。高低差比实拍收小一些
     float edge = 0.47 + 0.07 * sin(PI * X)
-        + 0.035 * sin(2.0 * PI * (X * 1.25 - time / 6.5))
-        + 0.020 * sin(2.0 * PI * (X * 2.1 + time / 4.7) + 1.3);
+        + 0.035 * sin(2.0 * PI * (X * 1.25 - time / 8.0))
+        + 0.020 * sin(2.0 * PI * (X * 2.1 + time / 6.0) + 1.3);
 
     // 下沿附近的柔边 + 自上而下的整体衰减（按实拍剖面）
     float shape = 1.0 - smoothstep(-0.05, 0.28, Y - edge * aspect);
@@ -181,13 +174,13 @@ half4 main(float2 fc) {
 """
 
 /**
- * 对话页背景：Gemini 式的环境色状态指示（按 60fps 实拍逐帧还原）。
+ * 对话页背景：原有深色光幕配色，颜色由左向右单向推进。
  *
  * - 开始思考：黑底上 0.8s 内从顶部渐显深蓝
- * - 思考中：先停在蓝，然后沿色相环单向循环（蓝→青→绿→琥珀→洋红→紫→蓝，一圈 5.2s）
- * - 开始输出：回到蓝后快速扫过 青→绿→黄绿（1.4s），随后 0.6s 淡回黑
+ * - 思考中：先停在蓝，然后沿色相环单向循环（蓝→青→绿→琥珀→洋红→紫→蓝，一圈 4.3s）
+ * - 开始输出：立即停止顶部光幕，恢复闲置背景，不播放收尾色彩
  *
- * 颜色变化从左往右推进（左边缘领先右边缘 0.7s），所以看起来像一道色彩横扫过去；
+ * 颜色变化从左往右推进（左边缘领先右边缘 1.2s），所以看起来像一道色彩横扫过去；
  * 纵向顶部最亮，到屏高约 60% 淡到黑。
  */
 @Composable
@@ -218,25 +211,20 @@ internal fun AuroraBackground(
     }
 
     val thinking by AuroraMood.thinking
-    // 生成开始 / 结束的时间点（纳秒）；0 表示没有
+    // 生成开始时间（纳秒）；0 表示没有
     var startNs by remember { mutableLongStateOf(0L) }
-    var finishNs by remember { mutableLongStateOf(0L) }
     var frameNs by remember { mutableLongStateOf(0L) }
 
     LaunchedEffect(thinking, enabled) {
         if (!enabled) {
             startNs = 0L
-            finishNs = 0L
             return@LaunchedEffect
         }
         if (thinking) {
             startNs = System.nanoTime()
-            finishNs = 0L
-        } else if (startNs != 0L && finishNs == 0L) {
-            finishNs = System.nanoTime()
-            delay(((FINISH_SECONDS + FADE_OUT_SECONDS + SWEEP_LAG) * 1000).toLong() + 100)
+        } else {
+            // Stop all columns together; color phase never controls visibility.
             startNs = 0L
-            finishNs = 0L
         }
     }
 
@@ -269,42 +257,13 @@ internal fun AuroraBackground(
         val now = System.nanoTime()
         val active = startNs != 0L
         val t = if (active) (now - startNs) / 1_000_000_000f else 0f
-        val sinceFinish = if (finishNs != 0L) (now - finishNs) / 1_000_000_000f else -1f
 
-        /**
-         * 某一列在"列时间" tt 下的颜色与强度。
-         * tt = 全局时间 - 该列的滞后（左边 0、右边 SWEEP_LAG）。
-         */
-        fun columnState(lag: Float): Pair<Color, Float> {
-            val tt = t - lag
-            if (tt <= 0f) return Color(0xFF1D3674) to 0f
-            val fadeIn = (tt / FADE_IN_SECONDS).coerceIn(0f, 1f)
-            if (sinceFinish < 0f) {
-                return streamingColor(tt) to fadeIn
-            }
-            val f = sinceFinish - lag
-            // 结束前的颜色（停在被打断的位置）
-            val frozenT = ((finishNs - startNs) / 1_000_000_000f - lag).coerceAtLeast(0f)
-            val frozen = streamingColor(frozenT)
-            return when {
-                f <= 0f -> frozen to fadeIn
-                f < 0.3f -> lerp(frozen, FinishColors.first().second, f / 0.3f) to fadeIn
-                f < FINISH_SECONDS -> sample(FinishColors, (f - 0.3f) / (FINISH_SECONDS - 0.3f)) to fadeIn
-                f < FINISH_SECONDS + FADE_OUT_SECONDS -> {
-                    val k = 1f - (f - FINISH_SECONDS) / FADE_OUT_SECONDS
-                    FinishColors.last().second to fadeIn * k * k
-                }
-                else -> FinishColors.last().second to 0f
-            }
-        }
+        // 全宽一起显隐；颜色按各列自己的 S 曲线进度取样，形成横扫的色带。
+        val envelope = (t / FADE_IN_SECONDS).coerceIn(0f, 1f)
+        fun columnColor(x: Float): Color = paletteAt(columnLapEase(t, x))
 
         // 空闲：输入框附近一层淡蓝（随键盘上移）；有动画时让位
-        val idleWeight = if (active) {
-            val (_, env) = columnState(SWEEP_LAG * 0.5f)
-            1f - env
-        } else {
-            1f
-        }
+        val idleWeight = if (active) 1f - envelope else 1f
         val idleAlpha = idleWeight * strength
         if (idleAlpha > 0.01f) {
             val anchorY = h * 1.04f - imeBottomPx
@@ -333,12 +292,11 @@ internal fun AuroraBackground(
         }
         if (!active) return@Canvas
 
-        // 1) 横向：9 个色标，从左到右依次滞后，形成"一道颜色横扫过去"
+        // 横向 9 个色标取自同一条坡道；缓动旋转时等色线自然横扫。
         val stops = 9
         val topColors = (0 until stops).map { i ->
             val x = i / (stops - 1f)
-            val (c, env) = columnState(x * SWEEP_LAG)
-            c.copy(alpha = (env * strength).coerceIn(0f, 1f))
+            columnColor(x).copy(alpha = (envelope * strength).coerceIn(0f, 1f))
         }
         if (topColors.all { it.alpha <= 0.002f }) return@Canvas
 

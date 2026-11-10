@@ -504,9 +504,9 @@ private fun SettingsPageContent(
                 SettingsGroupCard {
                     ArrowPreference(
                         title = "免 Root 虚拟屏",
-                        summary = "用系统无线调试做后台虚拟屏，不需要 Root 或 LSPosed",
+                        summary = "通过 Shizuku 管理后台副屏，不需要 Root 或 LSPosed",
                         startAction = { SettingsIcon(Icons.Rounded.OpenInNew, tint = SettingsIconColors.Green) },
-                        onClick = { onNavigate(AppRoute.ShellHelper) },
+                        onClick = { onNavigate(AppRoute.VirtualScreen) },
                     )
                 }
             }

@@ -20,6 +20,8 @@ import android.view.WindowManager
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.scale
 import io.github.icexxl.etax.agent.accessibility.AgentAccessibilityService
+import io.github.icexxl.etax.channel.vscreen.VScreenBackend
+import io.github.icexxl.etax.channel.vscreen.VScreenPolicy
 import io.github.icexxl.etax.agent.device.BoundedRootCommandExecutor
 import io.github.icexxl.etax.agent.device.DeviceToolContract
 import io.github.icexxl.etax.agent.device.RootAccess
@@ -64,7 +66,7 @@ internal object VirtualDisplayController {
     private var imageReader: ImageReader? = null
     private var inProcessVirtualDisplay: VirtualDisplay? = null
     private var rootBridgeProcess: Process? = null
-    /** 经 shell 助手创建的屏号（释放时要交回给助手）。 */
+    /** Shizuku daemon owns this display independently of the app preview. */
     private var shellDisplayId: Int = Display.INVALID_DISPLAY
     /** 接管时的确切任务，禁止按主屏最上层任务猜测回程目标。 */
     private var handedOverTaskId: Int = -1
@@ -111,27 +113,56 @@ internal object VirtualDisplayController {
     }
 
     private fun shellDisplayAlive(context: Context, displayId: Int): Boolean =
-        shellDisplayId != displayId || runCatching {
-            val shell = io.github.icexxl.etax.channel.shell.EtaShellConnection.shell(context) ?: return@runCatching false
-            shell.identity().size == 2 && context.getSystemService(DisplayManager::class.java)
-                ?.getDisplay(displayId) != null
-        }.getOrDefault(false)
+        shellDisplayId != displayId || (VScreenBackend.isReady() &&
+            VScreenBackend.list().getOrNull()?.any { it.displayId == displayId } == true)
 
-    /** Only inject into a display owned by the shell helper, never the physical display. */
+    /** Never direct a virtual-screen key to the physical display. */
     fun injectShellKey(displayId: Int, keyCode: Int): Boolean {
-        val context = appContextOrNull ?: return false
-        if (!CanvasRoutingPolicy.isVirtualDisplay(displayId) ||
-            synchronized(lock) { shellDisplayId != displayId || !mutableSnapshots.value.active }
-        ) return false
-        return runCatching {
-            io.github.icexxl.etax.channel.shell.EtaShellConnection.shell(context)
-                ?.injectKey(displayId, keyCode) == true
-        }.getOrDefault(false)
+        if (!isShellDisplay(displayId)) return false
+        VScreenBackend.touch(displayId)
+        return VScreenBackend.injectKey(displayId, keyCode, false).getOrDefault(false)
+    }
+
+    fun injectBackendTap(displayId: Int, x: Int, y: Int): Boolean =
+        injectViaVScreen(displayId, x, y, false)
+
+    fun injectBackendSwipe(displayId: Int, x1: Int, y1: Int, x2: Int, y2: Int, duration: Int): Boolean =
+        injectSwipeViaVScreen(displayId, x1, y1, x2, y2, duration)
+
+    /** A successful am command alone does not establish the display routing outcome. */
+    private fun awaitPackageOnDisplay(displayId: Int, packageName: String): Boolean {
+        val deadline = SystemClock.elapsedRealtime() + 2_000L
+        do {
+            if (!isShellDisplay(displayId)) return false
+            if (VScreenBackend.listTasks(displayId).getOrNull()?.any { it.pkg == packageName } == true) return true
+            try {
+                Thread.sleep(100L)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
+        } while (SystemClock.elapsedRealtime() < deadline)
+        return false
+    }
+
+    private val heartbeat = object : Runnable {
+        override fun run() {
+            val id = synchronized(lock) { shellDisplayId }
+            if (id == Display.INVALID_DISPLAY) return
+            // Binder call outside the lock: a busy daemon must not freeze UI readers.
+            runCatching { VScreenBackend.touch(id) }
+            synchronized(lock) {
+                if (shellDisplayId == id) frameHandler?.postDelayed(this, 10_000L)
+            }
+        }
     }
 
     /**
      * 确保受信任虚拟屏已就绪并返回其 displayId；不可用时返回 null，由调用方平滑回退至物理主屏。
      */
+    /** Serializes screen creation; the state lock stays free for UI readers. */
+    private val creationGate = Any()
+
     fun ensureVirtualDisplay(
         context: Context,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
@@ -139,12 +170,17 @@ internal object VirtualDisplayController {
         val appContext = context.applicationContext
         appContextOrNull = appContext
         val (width, height, densityDpi) = resolvePhysicalDisplayMetrics(appContext)
+        val current = synchronized(lock) {
+            activeDisplayId.takeIf { CanvasRoutingPolicy.isVirtualDisplay(it) && imageReader != null }
+        }
+        if (current != null && shellDisplayAlive(appContext, current)) return current
+
+        synchronized(creationGate) {
+        val raced = synchronized(lock) {
+            activeDisplayId.takeIf { CanvasRoutingPolicy.isVirtualDisplay(it) && imageReader != null }
+        }
+        if (raced != null) return raced
         synchronized(lock) {
-            if (CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId) && imageReader != null &&
-                shellDisplayAlive(appContext, activeDisplayId)
-            ) {
-                return activeDisplayId
-            }
             releaseLocked(appContext, rootAvailable)
 
             val thread = HandlerThread("eta-virtual-display-frame").apply { start() }
@@ -159,9 +195,18 @@ internal object VirtualDisplayController {
             displayHeight = height
             displayDensityDpi = densityDpi
 
+        }
+
+        // Binder-heavy creation happens without the state lock held.
+        if (VScreenBackend.isReady()) {
+            return attachDaemonSession(appContext, rootAvailable)
+        }
+
+        synchronized(lock) {
+            val activeReader = imageReader ?: return null
             val createdInProcess = tryCreateInProcessVirtualDisplay(
                 appContext = appContext,
-                surface = reader.surface,
+                surface = activeReader.surface,
                 width = width,
                 height = height,
                 densityDpi = densityDpi,
@@ -183,26 +228,10 @@ internal object VirtualDisplayController {
                 runCatching { createdInProcess.release() }
             }
 
-            // 免 Root 路径：App 侧建 ImageReader，把 Surface 交给 shell 助手建屏。
-            // 画面仍回到本进程，截图与预览逻辑不变。
-            val shellId = tryCreateViaShellHelper(appContext, reader.surface, width, height, densityDpi)
-            if (shellId != null && CanvasRoutingPolicy.isVirtualDisplay(shellId)) {
-                shellDisplayId = shellId
-                activeDisplayId = shellId
-                mutableSnapshots.value = VirtualDisplaySnapshot(
-                    active = true,
-                    displayId = shellId,
-                    width = width,
-                    height = height,
-                )
-                AndroidAgentLogger.info("Virtual display created via shell helper: displayId=$shellId")
-                return shellId
-            }
-
             if (rootAvailable()) {
                 val rootId = tryCreateRootBridgedVirtualDisplay(
                     appContext = appContext,
-                    surface = reader.surface,
+                    surface = activeReader.surface,
                     width = width,
                     height = height,
                     densityDpi = densityDpi,
@@ -224,6 +253,72 @@ internal object VirtualDisplayController {
             releaseLocked(appContext, rootAvailable)
             return null
         }
+        }
+    }
+
+    /** Adopts or creates the daemon screen. Returns null (and resets state) on any rejection. */
+    private fun attachDaemonSession(appContext: Context, rootAvailable: () -> Boolean): Int? {
+        val readerAtEntry = synchronized(lock) { imageReader } ?: return null
+        val remoteDisplays = VScreenBackend.list().getOrNull()
+            ?: return abandonDaemonSession(appContext, rootAvailable)
+        val existing = VScreenPolicy.pickAdoptable(remoteDisplays, CanvasRoutingPolicy.VIRTUAL_DISPLAY_NAME)
+        val daemonId = if (existing != null) {
+            val target = synchronized(lock) {
+                if (existing.width != displayWidth || existing.height != displayHeight) {
+                    readerAtEntry.setOnImageAvailableListener(null, null)
+                    readerAtEntry.close()
+                    ImageReader.newInstance(existing.width, existing.height, PixelFormat.RGBA_8888, 3)
+                        .also { it.setOnImageAvailableListener(::onFrameAvailable, frameHandler) }
+                        .also { resized ->
+                            imageReader = resized
+                            displayWidth = existing.width
+                            displayHeight = existing.height
+                            displayDensityDpi = existing.dpi
+                        }
+                } else {
+                    readerAtEntry
+                }
+            }
+            VScreenBackend.setSurface(existing.displayId, target.surface).getOrNull()?.let { existing.displayId }
+        } else {
+            VScreenBackend.create(
+                CanvasRoutingPolicy.VIRTUAL_DISPLAY_NAME,
+                displayWidth, displayHeight, displayDensityDpi, readerAtEntry.surface,
+            ).getOrNull()?.displayId
+        }
+        if (daemonId == null || !CanvasRoutingPolicy.isVirtualDisplay(daemonId)) {
+            // A rejected daemon operation must not silently change backends or move tasks.
+            return abandonDaemonSession(appContext, rootAvailable)
+        }
+        val packageName = VScreenBackend.listTasks(daemonId).getOrNull()
+            ?.firstOrNull { it.visible }?.pkg.orEmpty()
+        val committed = synchronized(lock) {
+            if (imageReader == null) {
+                false
+            } else {
+                shellDisplayId = daemonId
+                activeDisplayId = daemonId
+                mutableSnapshots.value = VirtualDisplaySnapshot(
+                    active = true, displayId = daemonId,
+                    width = displayWidth, height = displayHeight, packageName = packageName,
+                )
+                frameHandler?.post(heartbeat)
+                true
+            }
+        }
+        if (!committed) {
+            // The session was detached while we were attaching; do not leak the daemon screen.
+            thread(name = "etax-vscreen-release", isDaemon = true) {
+                runCatching { VScreenBackend.release(daemonId) }
+            }
+            return null
+        }
+        return daemonId
+    }
+
+    private fun abandonDaemonSession(appContext: Context, rootAvailable: () -> Boolean): Int? {
+        synchronized(lock) { releaseLocked(appContext, rootAvailable) }
+        return null
     }
 
     /**
@@ -238,9 +333,11 @@ internal object VirtualDisplayController {
     ): Int? {
         val displayId = ensureVirtualDisplay(context, rootAvailable) ?: return null
         val appContext = context.applicationContext
-        mutePackageAudioFocusIfPossible(appContext, packageName, rootAvailable)
+        if (!isShellDisplay(displayId)) {
+            mutePackageAudioFocusIfPossible(appContext, packageName, rootAvailable)
+        }
 
-        val startedInProcess = runCatching {
+        val startedInProcess = shellDisplayId != displayId && runCatching {
             val intent = Intent(launchIntent).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
             }
@@ -255,10 +352,12 @@ internal object VirtualDisplayController {
         }
 
         val startedViaShell = if (!startedInProcess && shellDisplayId == displayId) {
-            val shell = io.github.icexxl.etax.channel.shell.EtaShellConnection.shell(appContext)
-            runCatching { shell?.startApp(displayId, packageName) == 0 }.getOrDefault(false)
+            VScreenBackend.touch(displayId)
+            VScreenBackend.launch(displayId, packageName, launchIntent.component?.className).isSuccess &&
+                awaitPackageOnDisplay(displayId, packageName)
         } else false
-        if (!startedInProcess && !startedViaShell || rootAvailable()) {
+        if (shellDisplayId == displayId && !startedViaShell) return null
+        if (shellDisplayId != displayId && (!startedInProcess || rootAvailable())) {
             // Root 下补发一次指定 displayId 的 am start，确保后台启动限制或跨屏栈迁移生效
             if (rootAvailable()) {
                 val userId = DeviceToolContract.appUserId(appContext)
@@ -306,6 +405,20 @@ internal object VirtualDisplayController {
     ): Int? {
         val displayId = ensureVirtualDisplay(context, rootAvailable) ?: return null
         val appContext = context.applicationContext
+        if (shellDisplayId == displayId) {
+            VScreenBackend.touch(displayId)
+            val packageName = intent.`package` ?: intent.component?.packageName
+                ?: appContext.packageManager.resolveActivity(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+                    ?.activityInfo?.packageName
+                ?: return null
+            if (VScreenBackend.launch(displayId, packageName, intent.component?.className, intent.dataString).isFailure ||
+                !awaitPackageOnDisplay(displayId, packageName)
+            ) return null
+            synchronized(lock) {
+                mutableSnapshots.value = mutableSnapshots.value.copy(appName = targetLabel, packageName = packageName)
+            }
+            return displayId
+        }
         val started = runCatching {
             val launch = Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId)
@@ -366,7 +479,10 @@ internal object VirtualDisplayController {
         val appContext = context.applicationContext
         restoreMutedPackages(appContext, rootAvailable)
 
-        val moved = moveVirtualTaskToMainDisplay(
+        val moved = if (isShellDisplay(snapshot.displayId)) {
+            val taskId = VScreenBackend.topTaskId(snapshot.displayId).getOrNull()
+            taskId != null && VScreenBackend.moveTask(taskId, Display.DEFAULT_DISPLAY).getOrDefault(false)
+        } else moveVirtualTaskToMainDisplay(
             context = appContext,
             displayId = snapshot.displayId,
             packageName = snapshot.packageName,
@@ -402,62 +518,35 @@ internal object VirtualDisplayController {
     fun handOverTopTaskToUser(context: Context): Boolean {
         val snapshot = synchronized(lock) { mutableSnapshots.value }
         if (!snapshot.active || !CanvasRoutingPolicy.isVirtualDisplay(snapshot.displayId)) return false
-        val shell = io.github.icexxl.etax.channel.shell.EtaShellConnection.shell(context.applicationContext)
-            ?: return handOffViaRoot(context, snapshot)
-        return runCatching {
-            val taskId = shell.topTaskId(snapshot.displayId)
-            if (taskId <= 0) return false
-            val moved = shell.moveTask(taskId, Display.DEFAULT_DISPLAY)
-            if (moved) {
-                // 只记录确切的任务 ID；主屏随后切到其他应用时也不能误挪用户当前任务。
-                synchronized(lock) {
-                    handedOverTaskId = taskId
-                    handedOverDisplayId = snapshot.displayId
-                    mutableSnapshots.value = mutableSnapshots.value.copy(userControlling = true)
-                }
-                // 交给用户时恢复声音，不然用户听不到提示
-                snapshot.packageName.takeIf { it.isNotBlank() }?.let { pkg ->
-                    runCatching { shell.setAudioMuted(pkg, false) }
-                }
-            }
-            moved
-        }.getOrDefault(false)
+        if (!isShellDisplay(snapshot.displayId)) return handoffToMainDisplay(context)
+        VScreenBackend.touch(snapshot.displayId)
+        val taskId = VScreenBackend.topTaskId(snapshot.displayId).getOrNull() ?: return false
+        val moved = VScreenBackend.moveTask(taskId, Display.DEFAULT_DISPLAY).getOrDefault(false)
+        if (moved) synchronized(lock) {
+            handedOverTaskId = taskId
+            handedOverDisplayId = snapshot.displayId
+            mutableSnapshots.value = mutableSnapshots.value.copy(userControlling = true)
+        }
+        return moved
     }
 
-    /** 用户处理完：把主屏上那个任务挪回虚拟屏，重新静音并让 Agent 接着做。 */
+    /** Return only the exact task handed to the user, never the current foreground task. */
     fun takeBackTaskFromUser(context: Context): Boolean {
-        val snapshot = synchronized(lock) { mutableSnapshots.value }
-        if (!snapshot.active || !CanvasRoutingPolicy.isVirtualDisplay(snapshot.displayId)) return false
+        val snapshot = mutableSnapshots.value
+        if (!isShellDisplay(snapshot.displayId)) return false
         val taskId = synchronized(lock) {
             handedOverTaskId.takeIf { it > 0 && handedOverDisplayId == snapshot.displayId }
         } ?: return false
-        val shell = io.github.icexxl.etax.channel.shell.EtaShellConnection.shell(context.applicationContext)
-            ?: return false
-        return runCatching {
-            // 不依赖当前前台应用，也不根据包名猜测；原任务不在主屏就拒绝挪移。
-            if (shell.displayOfTask(taskId) != Display.DEFAULT_DISPLAY) return false
-            val moved = shell.moveTask(taskId, snapshot.displayId)
-            if (moved) {
-                synchronized(lock) {
-                    handedOverTaskId = -1
-                    handedOverDisplayId = Display.INVALID_DISPLAY
-                    mutableSnapshots.value = mutableSnapshots.value.copy(userControlling = false)
-                }
-                snapshot.packageName.takeIf { it.isNotBlank() }?.let { pkg ->
-                    runCatching { shell.setAudioMuted(pkg, true) }
-                }
-            }
-            moved
-        }.getOrDefault(false)
+        if (VScreenBackend.displayOfTask(taskId).getOrNull() != Display.DEFAULT_DISPLAY) return false
+        VScreenBackend.touch(snapshot.displayId)
+        val moved = VScreenBackend.moveTask(taskId, snapshot.displayId).getOrDefault(false)
+        if (moved) synchronized(lock) {
+            handedOverTaskId = -1
+            handedOverDisplayId = Display.INVALID_DISPLAY
+            mutableSnapshots.value = mutableSnapshots.value.copy(userControlling = false)
+        }
+        return moved
     }
-
-    /** 没有 shell 助手时（有 Root）退回原来的整屏移交路径。 */
-    private fun handOffViaRoot(
-        context: Context,
-        snapshot: VirtualDisplaySnapshot,
-    ): Boolean = runCatching {
-        handoffToMainDisplay(context)
-    }.getOrDefault(false)
 
     /**
      * 提取虚拟屏最新一帧的完整 Bitmap 副本（供 observe_screen 使用，调用方负责 recycle）。
@@ -531,13 +620,16 @@ internal object VirtualDisplayController {
         val y = (normalizedY.coerceIn(0f, 1f) * (snapshot.height - 1)).roundToInt()
         emitTapEffect(x, y, longPress = longPress)
         thread(name = "eta-vd-user-tap", isDaemon = true) {
+            if (isShellDisplay(snapshot.displayId)) {
+                injectViaVScreen(snapshot.displayId, x, y, longPress)
+                return@thread
+            }
             val duration = if (longPress) 650L else 55L
             val dispatched = AgentAccessibilityService.current()
                 ?.gestureTap(x.toFloat(), y.toFloat(), durationMs = duration, displayId = snapshot.displayId)
                 ?.ok == true
             // 免 Root：交回 shell 助手注入（长按用等长的一笔原地滑动）
-            val viaShell = !dispatched && injectViaShellHelper(
-                context = appContextOrNull,
+            val viaShell = !dispatched && injectViaVScreen(
                 displayId = snapshot.displayId,
                 tapX = x,
                 tapY = y,
@@ -576,6 +668,10 @@ internal object VirtualDisplayController {
         val safeDuration = durationMs.coerceIn(140, 1_000)
         emitSwipeEffect(x1, y1, x2, y2, safeDuration)
         thread(name = "eta-vd-user-swipe", isDaemon = true) {
+            if (isShellDisplay(snapshot.displayId)) {
+                injectSwipeViaVScreen(snapshot.displayId, x1, y1, x2, y2, safeDuration)
+                return@thread
+            }
             val dispatched = AgentAccessibilityService.current()
                 ?.gestureSwipe(
                     x1.toFloat(),
@@ -585,8 +681,7 @@ internal object VirtualDisplayController {
                     durationMs = safeDuration.toLong(),
                     displayId = snapshot.displayId,
                 )?.ok == true
-            val viaShell = !dispatched && injectSwipeViaShellHelper(
-                context = appContextOrNull,
+            val viaShell = !dispatched && injectSwipeViaVScreen(
                 displayId = snapshot.displayId,
                 x1 = x1,
                 y1 = y1,
@@ -617,6 +712,25 @@ internal object VirtualDisplayController {
         }
     }
 
+    /** Close app-owned preview resources without destroying the daemon-owned task/display. */
+    fun detach(context: Context? = appContextOrNull) {
+        val detachedId: Int
+        synchronized(lock) {
+            detachedId = shellDisplayId
+            shellDisplayId = Display.INVALID_DISPLAY
+        }
+        if (detachedId != Display.INVALID_DISPLAY) {
+            // Park first (surface = null) so the daemon stops drawing into a dead consumer;
+            // a worker keeps the main thread out of the binder call.
+            thread(name = "etax-vscreen-park", isDaemon = true) {
+                runCatching { VScreenBackend.park(detachedId) }
+            }
+        }
+        synchronized(lock) {
+            releaseLocked(context) { RootAccess.isGranted }
+        }
+    }
+
     private fun releaseLocked(
         context: Context?,
         rootAvailable: () -> Boolean,
@@ -640,10 +754,11 @@ internal object VirtualDisplayController {
 
         val shellId = shellDisplayId
         shellDisplayId = Display.INVALID_DISPLAY
-        if (shellId != Display.INVALID_DISPLAY && context != null) {
-            runCatching {
-                io.github.icexxl.etax.channel.shell.EtaShellConnection
-                    .shell(context.applicationContext)?.releaseDisplay(shellId)
+        if (shellId != Display.INVALID_DISPLAY) {
+            // Never block the caller (often Main) on a busy daemon; ordering with the reader
+            // close below is irrelevant because the display is being removed entirely.
+            thread(name = "etax-vscreen-release", isDaemon = true) {
+                runCatching { VScreenBackend.release(shellId) }
             }
         }
 
@@ -674,6 +789,7 @@ internal object VirtualDisplayController {
         }
         imageReader = null
 
+        frameHandler?.removeCallbacks(heartbeat)
         frameThread?.let { thread ->
             runCatching { thread.quitSafely() }
         }
@@ -702,7 +818,7 @@ internal object VirtualDisplayController {
             val bitmap = decodeImageToBitmap(image) ?: return
             var oldBitmap: Bitmap? = null
             synchronized(lock) {
-                if (!CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId)) {
+                if (reader !== imageReader || !CanvasRoutingPolicy.isVirtualDisplay(activeDisplayId)) {
                     bitmap.recycle()
                     return
                 }
@@ -801,60 +917,25 @@ internal object VirtualDisplayController {
         }
     }.getOrNull()
 
-    /** 经 shell 助手注入一次点击；长按用等长的一笔原地滑动。 */
-    private fun injectViaShellHelper(
-        context: Context?,
-        displayId: Int,
-        tapX: Int,
-        tapY: Int,
-        longPress: Boolean,
-    ): Boolean = runCatching {
-        val shell = context
-            ?.let { io.github.icexxl.etax.channel.shell.EtaShellConnection.shell(it.applicationContext) }
-            ?: return false
-        if (longPress) {
-            shell.injectStroke(displayId, intArrayOf(tapX, tapX), intArrayOf(tapY, tapY), longArrayOf(0L, 650L))
-        } else {
-            shell.injectTap(displayId, tapX, tapY)
-        }
-    }.getOrDefault(false)
+    private fun injectViaVScreen(
+        displayId: Int, tapX: Int, tapY: Int, longPress: Boolean,
+    ): Boolean {
+        if (!isShellDisplay(displayId)) return false
+        VScreenBackend.touch(displayId)
+        return if (longPress) {
+            VScreenBackend.injectStroke(displayId, tapX, tapY, tapX, tapY, 0, 650).getOrDefault(false)
+        } else VScreenBackend.injectTap(displayId, tapX, tapY).getOrDefault(false)
+    }
 
-    /** 经 shell 助手注入一次滑动。 */
-    private fun injectSwipeViaShellHelper(
-        context: Context?,
-        displayId: Int,
-        x1: Int,
-        y1: Int,
-        x2: Int,
-        y2: Int,
-        durationMs: Int,
-    ): Boolean = runCatching {
-        val shell = context
-            ?.let { io.github.icexxl.etax.channel.shell.EtaShellConnection.shell(it.applicationContext) }
-            ?: return false
-        // 按时间把这一笔拆成若干点，注入速度就是用户看到的速度
-        val total = durationMs.coerceIn(140, 1_500)
-        val steps = 12
-        val xs = IntArray(steps + 1) { i -> x1 + (x2 - x1) * i / steps }
-        val ys = IntArray(steps + 1) { i -> y1 + (y2 - y1) * i / steps }
-        val times = LongArray(steps + 1) { i -> total.toLong() * i / steps }
-        shell.injectStroke(displayId, xs, ys, times)
-    }.getOrDefault(false)
-
-    /** 经 shell 助手（免 Root）建屏；助手不可用时返回 null，由调用方继续尝试别的后端。 */
-    private fun tryCreateViaShellHelper(
-        context: Context,
-        surface: android.view.Surface,
-        width: Int,
-        height: Int,
-        densityDpi: Int,
-    ): Int? = runCatching {
-        val shell = io.github.icexxl.etax.channel.shell.EtaShellConnection.shell(context) ?: return null
-        val id = shell.createDisplay(surface, width, height, densityDpi)
-        id.takeIf { CanvasRoutingPolicy.isVirtualDisplay(it) }
-    }.onFailure {
-        AndroidAgentLogger.debug { "shell helper createDisplay failed: ${it.safeLogType()}" }
-    }.getOrNull()
+    private fun injectSwipeViaVScreen(
+        displayId: Int, x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Int,
+    ): Boolean {
+        if (!isShellDisplay(displayId)) return false
+        VScreenBackend.touch(displayId)
+        return if (x1 == x2 && y1 == y2) {
+            VScreenBackend.injectStroke(displayId, x1, y1, x2, y2, 0, durationMs).getOrDefault(false)
+        } else VScreenBackend.injectStroke(displayId, x1, y1, x2, y2, durationMs).getOrDefault(false)
+    }
 
     private fun tryCreateRootBridgedVirtualDisplay(
         appContext: Context,

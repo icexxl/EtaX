@@ -7,8 +7,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
@@ -27,7 +25,6 @@ import androidx.compose.ui.unit.Constraints
 import java.text.BreakIterator
 import java.util.Locale
 import kotlin.math.ceil
-import kotlin.math.floor
 import kotlin.math.max
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
@@ -83,7 +80,7 @@ internal class SmoothTextRevealCoordinator {
         while (iterator.hasNext()) {
             val (_, record) = iterator.next()
             if (record.key !in activeBlocks) {
-                removedPendingBlock = removedPendingBlock || record.progress < record.targetCount
+                removedPendingBlock = removedPendingBlock || record.hasPendingReveal
                 iterator.remove()
             }
         }
@@ -91,7 +88,7 @@ internal class SmoothTextRevealCoordinator {
         if (retainedStarted != startedState.value) {
             startedState.value = retainedStarted
         }
-        if (removedPendingBlock || records.none { (_, record) -> record.progress < record.targetCount }) {
+        if (removedPendingBlock || records.none { (_, record) -> record.hasPendingReveal }) {
             updateDrainedState()
         }
         wakeups.trySend(Unit)
@@ -165,6 +162,19 @@ internal class SmoothTextRevealCoordinator {
                     elapsedSeconds = elapsedSeconds,
                     totalBacklog = totalBacklog,
                 )
+                // Fade age is wall-clock based, independent of adaptive head speed. Multiple
+                // admitted groups therefore overlap, including across Markdown block boundaries.
+                val changedRecords = mutableSetOf<RevealRecord>()
+                records.values.forEach { record ->
+                    if (record.fadingGroups.isNotEmpty()) changedRecords += record
+                    record.fadingGroups.forEach { it.ageSeconds += elapsedSeconds }
+                }
+                // Keep a large catch-up burst from allocating a layer per three glyphs.
+                // Normal output retains three-grapheme groups and an ~11-grapheme trail.
+                val groupSize = max(
+                    REVEAL_GROUP_SIZE,
+                    ceil(smoothRevealSpeed(totalBacklog) * REVEAL_FADE_SECONDS / 24f).toInt(),
+                )
                 val newlyStarted = mutableSetOf<RevealBlockKey>()
                 // 块结束后剩余的推进量继续用于下一块，避免短段落把追赶速度限制为每帧一块。
                 for (record in records.values) {
@@ -173,10 +183,26 @@ internal class SmoothTextRevealCoordinator {
                     val pending = record.targetCount - record.progress
                     if (pending <= 0f) continue
                     val advance = remainingAdvance.coerceAtMost(pending)
+                    val previousProgress = record.progress
                     record.progress = (record.progress + advance).coerceAtMost(record.targetCount)
+                    while (record.admittedCount < record.targetCount && record.admittedCount < record.progress) {
+                        val start = record.admittedCount
+                        val end = (start + groupSize).coerceAtMost(record.targetCount.toInt())
+                        // Interpolate admission within this frame rather than flashing every new
+                        // group at the same opacity after a large catch-up step.
+                        val fraction = ((start - previousProgress) / advance).coerceIn(0f, 1f)
+                        record.fadingGroups += RevealFadeGroup(start, end, elapsedSeconds * (1f - fraction))
+                        record.admittedCount = end
+                    }
                     remainingAdvance -= advance
+                    changedRecords += record
                     if (record.key !in startedState.value) newlyStarted += record.key
-                    record.node?.onRevealDataChanged()
+                }
+                changedRecords.forEach { record ->
+                    while (record.fadingGroups.firstOrNull()?.alpha == 1f) {
+                        record.opaqueCount = record.fadingGroups.removeAt(0).end
+                    }
+                    if (record.hasPendingReveal || record.progress > 0f) record.node?.onRevealDataChanged()
                 }
                 if (newlyStarted.isNotEmpty()) startedState.value = startedState.value + newlyStarted
                 updateDrainedState()
@@ -201,6 +227,11 @@ internal class SmoothTextRevealCoordinator {
             record.text = text
             record.targetCount = record.boundaries.lastIndex.toFloat()
             record.progress = record.progress.coerceAtMost(record.targetCount)
+            val count = record.targetCount.toInt()
+            record.opaqueCount = record.opaqueCount.coerceAtMost(count)
+            record.admittedCount = record.admittedCount.coerceAtMost(count)
+            record.fadingGroups.removeAll { it.start >= count }
+            record.fadingGroups.forEach { it.end = it.end.coerceAtMost(count) }
         }
         if (record.layoutResult !== layoutResult) {
             record.layoutResult = layoutResult
@@ -212,6 +243,9 @@ internal class SmoothTextRevealCoordinator {
 
     private fun completeRecord(record: RevealRecord) {
         record.progress = record.targetCount
+        record.opaqueCount = record.targetCount.toInt()
+        record.admittedCount = record.opaqueCount
+        record.fadingGroups.clear()
         if (record.targetCount > 0f && record.key !in startedState.value) {
             startedState.value = startedState.value + record.key
         }
@@ -219,11 +253,11 @@ internal class SmoothTextRevealCoordinator {
     }
 
     private fun firstPendingRecord(): RevealRecord? = records.values.firstOrNull { record ->
-        record.progress < record.targetCount && record.node != null && record.layoutResult != null
+        record.hasPendingReveal && record.node != null && record.layoutResult != null
     }
 
     private fun updateDrainedState() {
-        drainedState.value = records.values.none { record -> record.progress < record.targetCount }
+        drainedState.value = records.values.none { record -> record.hasPendingReveal }
     }
 }
 
@@ -292,7 +326,7 @@ internal class SmoothTextRevealNode(
     private var cachedLayoutResult: TextLayoutResult? = null
     private var cachedFullCount = -1
     private var cachedFullPath: Path? = null
-    private var cachedNextPath: Path? = null
+    private val cachedFadePaths = mutableMapOf<Pair<Int, Int>, Path>()
     private var cachedVisibleHeight = -1
 
     override fun onAttach() {
@@ -341,77 +375,50 @@ internal class SmoothTextRevealNode(
         val snapshot = state.drawSnapshot() ?: return
         val contentScope = this
         val targetCount = snapshot.boundaries.lastIndex
-        if (targetCount <= 0 || snapshot.progress >= targetCount) {
+        if (targetCount <= 0 || snapshot.opaqueCount >= targetCount) {
             drawContent()
             return
         }
 
-        val fullCount = floor(snapshot.progress).toInt().coerceIn(0, targetCount)
-        ensurePaths(snapshot, fullCount)
+        ensurePaths(snapshot)
         cachedFullPath?.let { path ->
             clipPath(path) { contentScope.drawContent() }
         }
-
-        val partialAlpha = (snapshot.progress - fullCount).coerceIn(0f, 1f)
-        if (partialAlpha > 0f) {
-            cachedNextPath?.let { path ->
-                clipPath(path) {
-                    alphaPaint.alpha = partialAlpha
-                    drawContext.canvas.saveLayer(
-                        Rect(Offset.Zero, size),
-                        alphaPaint,
-                    )
-                    try {
-                        contentScope.drawContent()
-                    } finally {
-                        drawContext.canvas.restore()
-                    }
+        for (group in snapshot.fadingGroups) {
+            if (group.alpha <= 0f) continue
+            val path = cachedFadePaths[group.start to group.end] ?: continue
+            clipPath(path) {
+                alphaPaint.alpha = group.alpha
+                drawContext.canvas.saveLayer(path.getBounds(), alphaPaint)
+                try {
+                    contentScope.drawContent()
+                } finally {
+                    drawContext.canvas.restore()
                 }
             }
         }
     }
 
-    private fun ensurePaths(snapshot: RevealDrawSnapshot, fullCount: Int) {
-        val sameLayout = cachedLayoutResult === snapshot.layoutResult
-        if (sameLayout && cachedFullCount == fullCount) return
-
-        if (sameLayout && fullCount == cachedFullCount + 1) {
-            val completedPath = cachedNextPath
-            if (completedPath != null) {
-                val accumulatedPath = cachedFullPath ?: Path()
-                accumulatedPath.addPath(completedPath)
-                cachedFullPath = accumulatedPath
+    private fun ensurePaths(snapshot: RevealDrawSnapshot) {
+        if (cachedLayoutResult !== snapshot.layoutResult) {
+            clearPathCache()
+            cachedLayoutResult = snapshot.layoutResult
+        }
+        val textLength = snapshot.layoutResult.layoutInput.text.length
+        if (cachedFullCount != snapshot.opaqueCount) {
+            cachedFullCount = snapshot.opaqueCount
+            val end = snapshot.boundaries[cachedFullCount].coerceIn(0, textLength)
+            cachedFullPath = if (end > 0) snapshot.layoutResult.getPathForRange(0, end) else null
+        }
+        val activeRanges = snapshot.fadingGroups.map { it.start to it.end }.toSet()
+        cachedFadePaths.keys.retainAll(activeRanges)
+        for ((start, end) in activeRanges) {
+            cachedFadePaths.getOrPut(start to end) {
+                snapshot.layoutResult.getPathForRange(
+                    snapshot.boundaries[start].coerceIn(0, textLength),
+                    snapshot.boundaries[end].coerceIn(0, textLength),
+                )
             }
-            cachedFullCount = fullCount
-            cachedNextPath = nextGraphemePath(snapshot, fullCount)
-            return
-        }
-
-        cachedLayoutResult = snapshot.layoutResult
-        cachedFullCount = fullCount
-        val textLength = snapshot.layoutResult.layoutInput.text.length
-        val fullEnd = snapshot.boundaries[fullCount].coerceIn(0, textLength)
-        cachedFullPath = if (fullEnd > 0) {
-            snapshot.layoutResult.getPathForRange(0, fullEnd)
-        } else {
-            null
-        }
-        cachedNextPath = nextGraphemePath(snapshot, fullCount)
-    }
-
-    private fun nextGraphemePath(
-        snapshot: RevealDrawSnapshot,
-        fullCount: Int,
-    ): Path? {
-        val textLength = snapshot.layoutResult.layoutInput.text.length
-        val start = snapshot.boundaries.getOrNull(fullCount)?.coerceIn(0, textLength)
-            ?: return null
-        val end = snapshot.boundaries.getOrNull(fullCount + 1)?.coerceIn(start, textLength)
-            ?: return null
-        return if (end > start) {
-            snapshot.layoutResult.getPathForRange(start, end)
-        } else {
-            null
         }
     }
 
@@ -419,7 +426,7 @@ internal class SmoothTextRevealNode(
         cachedLayoutResult = null
         cachedFullCount = -1
         cachedFullPath = null
-        cachedNextPath = null
+        cachedFadePaths.clear()
     }
 }
 
@@ -432,6 +439,18 @@ internal class RevealDrawSnapshot(
         get() = record.boundaries
     val progress: Float
         get() = record.progress
+    val opaqueCount: Int
+        get() = record.opaqueCount
+    val fadingGroups: List<RevealFadeGroup>
+        get() = record.fadingGroups
+    val visibleCount: Int
+        get() = record.admittedCount
+
+    fun glyphAlpha(index: Int): Float = when {
+        index < 0 || index >= boundaries.lastIndex -> 0f
+        index < opaqueCount -> 1f
+        else -> fadingGroups.firstOrNull { index >= it.start && index < it.end }?.alpha ?: 0f
+    }
 }
 
 internal class RevealRecord(
@@ -443,6 +462,11 @@ internal class RevealRecord(
     var layoutResult: TextLayoutResult? = null
     var boundaries: IntArray = intArrayOf(0)
     var progress: Float = 0f
+    var opaqueCount: Int = 0
+    var admittedCount: Int = 0
+    val fadingGroups = mutableListOf<RevealFadeGroup>()
+    val hasPendingReveal: Boolean
+        get() = progress < targetCount || fadingGroups.isNotEmpty()
     var targetCount: Float = 0f
 }
 
@@ -454,7 +478,7 @@ private fun SmoothTextRevealState.visibleHeightPx(): Int {
         return layoutResult.size.height
     }
 
-    val visibleCount = ceil(snapshot.progress).toInt().coerceIn(0, targetCount)
+    val visibleCount = snapshot.visibleCount
     if (visibleCount == 0) return 0
     val textLength = layoutResult.layoutInput.text.length
     val visibleEnd = snapshot.boundaries[visibleCount].coerceIn(0, textLength)
@@ -515,6 +539,12 @@ internal fun updateGraphemeBoundaries(
     }
 }
 
+/**
+ * 小分片以每秒 50 字素连续显现，避免逐字等待；批量到达时按整条回答的积压自适应追赶。
+ * 0.30 秒是追赶的时间常数，并非固定延迟：不等缓冲、不按块停顿，也不限制最高速度，
+ * 因而长回答和高速输出仍能追平。相比 36 字素/秒、0.20 秒，日常增量更流畅，突发分片
+ * 的首帧跳跃更小；尾部降至基础速度后自然排空。
+ */
 internal fun smoothRevealSpeed(totalBacklog: Float): Float =
     max(BASE_REVEAL_GRAPHEMES_PER_SECOND, totalBacklog / TARGET_CATCH_UP_SECONDS)
 
@@ -533,5 +563,19 @@ internal fun advanceSmoothReveal(
 
 private const val NANOS_PER_SECOND = 1_000_000_000f
 private const val MAX_FRAME_DELTA_SECONDS = 0.05f
-private const val BASE_REVEAL_GRAPHEMES_PER_SECOND = 36f
-private const val TARGET_CATCH_UP_SECONDS = 0.20f
+private const val BASE_REVEAL_GRAPHEMES_PER_SECOND = 50f
+private const val TARGET_CATCH_UP_SECONDS = 0.30f
+internal const val REVEAL_GROUP_SIZE = 3
+
+/** A short group fades for 260 ms while later groups are already being admitted. */
+internal class RevealFadeGroup(val start: Int, var end: Int, var ageSeconds: Float) {
+    val alpha: Float get() = revealFadeAlpha(ageSeconds)
+}
+
+internal const val REVEAL_FADE_SECONDS = 0.26f
+
+internal fun revealFadeAlpha(ageSeconds: Float): Float {
+    val fraction = (ageSeconds / REVEAL_FADE_SECONDS).coerceIn(0f, 1f)
+    // Smooth endpoints avoid a visible onset or final-frame brightness step.
+    return fraction * fraction * (3f - 2f * fraction)
+}

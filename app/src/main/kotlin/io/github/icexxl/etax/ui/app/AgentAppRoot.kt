@@ -556,9 +556,9 @@ fun AgentAppRoot(
                     if (backStack.isEmpty()) backStack.add(AppRoute.Home)
                 }
             }
-            entry<AppRoute.ShellHelper>(swipeDismiss = swipeDismiss) {
-                io.github.icexxl.etax.channel.shell.ShellHelperScreen(
-                    onBack = { if (navigator.current() == AppRoute.ShellHelper) popRoute() },
+            entry<AppRoute.VirtualScreen>(swipeDismiss = swipeDismiss) {
+                io.github.icexxl.etax.channel.vscreen.VScreenSettingsScreen(
+                    onBack = { if (navigator.current() == AppRoute.VirtualScreen) popRoute() },
                 )
             }
             entry<AppRoute.OpenClaw>(swipeDismiss = swipeDismiss) {

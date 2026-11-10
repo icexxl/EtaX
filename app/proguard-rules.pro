@@ -71,14 +71,5 @@
     public static void main(java.lang.String[]);
 }
 
-# 免 Root 虚拟屏的 shell 助手：由 adbd 以
-# `app_process /system/bin io.github.icexxl.etax.channel.shell.HelperProcess` 按类名启动，
-# R8 看不到任何代码引用，必须显式保留，否则发布版会启动失败。
--keep class io.github.icexxl.etax.channel.shell.HelperProcess {
-    public static void main(java.lang.String[]);
-}
-# 助手侧服务与 AIDL 桩：跨进程经 Binder 调用，同样没有静态引用。
--keep class io.github.icexxl.etax.channel.shell.EtaShellService { *; }
--keep class io.github.icexxl.etax.shell.IEtaShell { *; }
--keep class io.github.icexxl.etax.shell.IEtaShell$Stub { *; }
--keep class io.github.icexxl.etax.shell.IEtaShell$Stub$Proxy { *; }
+# Shizuku instantiates the Agent-VScreen-derived daemon by class name.
+-keep class io.github.icexxl.etax.channel.vscreen.VScreenDisplayService { *; }

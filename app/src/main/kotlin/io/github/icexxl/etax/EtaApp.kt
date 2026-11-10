@@ -53,6 +53,7 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         }
         TerminalRuntime.initialize(this)
         RootAccess.initialize(this)
+        io.github.icexxl.etax.channel.vscreen.VScreenBackend.init(this)
         applicationScope.launch { TerminalRuntime.backgroundJobs(this@EtaApp).resume() }
         SettingsDataStore.init(this)
         val predictiveBackEnabled = runBlocking(Dispatchers.IO) {

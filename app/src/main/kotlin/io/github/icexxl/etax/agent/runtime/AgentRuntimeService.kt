@@ -196,7 +196,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         resultIo.shutdownNow()
         mainHandler.removeCallbacksAndMessages(null)
         AgentOverlayClearance.detach(clearanceHost)
-        VirtualDisplayController.release(this)
+        VirtualDisplayController.detach(this)
         unregisterResultCardBack()
         resultCardView?.let { view -> runCatching { windowManager?.removeView(view) } }
         capsuleView?.let { view -> runCatching { windowManager?.removeView(view) } }
@@ -558,6 +558,14 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         mainHandler.post {
             if (destroyed) return@post
             run.completedContext = completedContext
+            val handoff = run.request.handoff
+            if (AgentReplyNotification.shouldNotify(
+                    MainActivity.isInForeground, result.ok, run.request.operation, handoff?.source, result.content,
+                )) {
+                val conversationId = handoff?.let { AgentUiHandoffPayload.from(it.payload).conversationId }
+                runCatching { AgentReplyNotification.show(this, run.runId, conversationId) }
+                    .onFailure { AndroidAgentLogger.warn("Reply notification failed: type=${it.safeLogType()}") }
+            }
             val guiState = guiControl.state.value
             if (lastGuiOwnerRunId != run.runId || guiState.userPaused ||
                 (guiState.ownerRunId != null && guiState.ownerRunId != run.runId)) return@post
@@ -1146,14 +1154,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 state = state.value,
                 onClose = { dismissResult(resultRun) },
                 onOpenEta = { openEtaFromResult(resultRun) },
-                hasVirtualDisplayApp = virtualDisplayState.value.active &&
-                    virtualDisplayState.value.packageName.isNotBlank(),
-                onOpenVirtualApp = {
-                    thread(name = "eta-vd-result-handoff", isDaemon = true) {
-                        VirtualDisplayController.handoffToMainDisplay(this@AgentRuntimeService)
-                        mainHandler.post { dismissResult(resultRun) }
-                    }
-                },
             )
         }
         val lp = resultCardLayoutParams()
@@ -1440,7 +1440,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         displayedRun = null
         removeOverlayWindows()
         if (runs.all().isEmpty() && !guiControl.state.value.userPaused) {
-            VirtualDisplayController.release(this)
+            // Keep the daemon screen alive: closing the card ends the run, not the user's screen.
+            // Detach off the main thread because it parks the daemon and restores audio focus.
+            val appContext = this
+            thread(name = "etax-vd-detach", isDaemon = true) {
+                VirtualDisplayController.detach(appContext)
+            }
             stopSelf()
         }
     }

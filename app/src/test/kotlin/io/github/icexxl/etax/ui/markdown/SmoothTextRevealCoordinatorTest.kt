@@ -78,10 +78,9 @@ class SmoothTextRevealCoordinatorTest {
             yield()
 
             assertEquals(10f, coordinator.drawSnapshot(keys[0])!!.progress, 0f)
-            assertEquals(10f, coordinator.drawSnapshot(keys[1])!!.progress, 0f)
-            assertEquals(5f, coordinator.drawSnapshot(keys[2])!!.progress, 0f)
-            keys.drop(3).forEach { assertEquals(0f, coordinator.drawSnapshot(it)!!.progress, 0f) }
-            assertEquals(keys.take(3).toSet(), coordinator.started.value)
+            assertEquals(100f / 0.30f * 0.05f - 10f, coordinator.drawSnapshot(keys[1])!!.progress, 0.0001f)
+            keys.drop(2).forEach { assertEquals(0f, coordinator.drawSnapshot(it)!!.progress, 0f) }
+            assertEquals(keys.take(2).toSet(), coordinator.started.value)
             assertFalse(coordinator.drained.value)
 
             repeat(60) { clock.send((it + 2) * 50_000_000L) }
@@ -91,6 +90,50 @@ class SmoothTextRevealCoordinatorTest {
         } finally {
             frameJob.cancelAndJoin()
         }
+    }
+
+    @Test
+    fun stalledFrameDoesNotDumpAccumulatedWallClockTimeIntoReveal() = runBlocking {
+        val coordinator = SmoothTextRevealCoordinator()
+        val key = RevealBlockKey(0)
+        attach(coordinator, key, "a".repeat(100))
+        val clock = TestFrameClock()
+        val frameJob = launch(clock, start = CoroutineStart.UNDISPATCHED) {
+            coordinator.runFrameClock()
+        }
+        try {
+            clock.send(0L)
+            clock.send(2_000_000_000L)
+            yield()
+
+            // A delayed frame still advances by at most 50 ms of pacing.
+            assertEquals(100f / 0.30f * 0.05f, coordinator.drawSnapshot(key)!!.progress, 0.0001f)
+            assertFalse(coordinator.drained.value)
+        } finally {
+            frameJob.cancelAndJoin()
+        }
+    }
+
+    @Test
+    fun backgroundUpdatesAndRestoreAreReadableBeforeNewSuffixAnimates() {
+        val coordinator = SmoothTextRevealCoordinator()
+        val key = RevealBlockKey(0)
+        val state = SmoothTextRevealState(key, coordinator)
+        state.attach(SmoothTextRevealNode(state))
+        state.onTextLayout("prefix", layout("prefix"))
+
+        coordinator.pauseAnimationsAndCatchUp()
+        state.onTextLayout("prefix background", layout("prefix background"))
+        coordinator.resumeAnimationsAfterCatchUp()
+        assertTrue(coordinator.drained.value)
+        assertEquals(17f, coordinator.drawSnapshot(key)!!.progress, 0f)
+
+        state.onTextLayout("prefix background live", layout("prefix background live"))
+        assertEquals(17f, coordinator.drawSnapshot(key)!!.progress, 0f)
+        assertEquals(22, coordinator.drawSnapshot(key)!!.boundaries.lastIndex)
+        repeat(17) { assertEquals(1f, coordinator.drawSnapshot(key)!!.glyphAlpha(it), 0f) }
+        assertEquals(0f, coordinator.drawSnapshot(key)!!.glyphAlpha(17), 0f)
+        assertFalse(coordinator.drained.value)
     }
 
     @Test
@@ -106,6 +149,8 @@ class SmoothTextRevealCoordinatorTest {
         val snapshot = coordinator.drawSnapshot(key)!!
         assertEquals(4f, snapshot.progress, 0f)
         assertEquals(9, snapshot.boundaries.lastIndex)
+        repeat(4) { assertEquals(1f, snapshot.glyphAlpha(it), 0f) }
+        assertEquals(0f, snapshot.glyphAlpha(4), 0f)
         assertFalse(coordinator.drained.value)
     }
 
@@ -138,6 +183,75 @@ class SmoothTextRevealCoordinatorTest {
         assertFalse(coordinator.drained.value)
         coordinator.detach(key, replacementNode)
         assertTrue(coordinator.drained.value)
+    }
+
+    @Test
+    fun rollingTrailOverlapsGroupsAndGlyphOpacityNeverRegressesOnAppend() = runBlocking {
+        val coordinator = SmoothTextRevealCoordinator()
+        val key = RevealBlockKey(0)
+        val state = SmoothTextRevealState(key, coordinator)
+        state.attach(SmoothTextRevealNode(state))
+        state.onTextLayout("abcdefghijklmnopqr", layout("abcdefghijklmnopqr"))
+        val clock = TestFrameClock()
+        val frameJob = launch(clock, start = CoroutineStart.UNDISPATCHED) { coordinator.runFrameClock() }
+        try {
+            clock.send(0L)
+            var previous = FloatArray(18)
+            repeat(65) { frame ->
+                clock.send((frame + 1) * 16_666_667L)
+                yield()
+                val snapshot = coordinator.drawSnapshot(key)!!
+                val alphas = FloatArray(18) { snapshot.glyphAlpha(it) }
+                alphas.forEachIndexed { index, alpha ->
+                    assertTrue("glyph $index regressed at frame $frame", alpha >= previous[index])
+                }
+                previous = alphas
+                if (frame == 7) {
+                    val partialGroups = snapshot.fadingGroups.filter { it.alpha > 0f && it.alpha < 1f }
+                    assertTrue("multiple groups must fade concurrently", partialGroups.size >= 3)
+                    assertTrue(partialGroups.first().alpha > partialGroups.last().alpha)
+                    val appended = "abcdefghijklmnopqrstuvwxyz"
+                    state.onTextLayout(appended, layout(appended))
+                    alphas.forEachIndexed { index, alpha ->
+                        assertEquals(alpha, snapshot.glyphAlpha(index), 0f)
+                    }
+                }
+            }
+            assertTrue(coordinator.drained.value)
+            val snapshot = coordinator.drawSnapshot(key)!!
+            repeat(26) { assertEquals(1f, snapshot.glyphAlpha(it), 0f) }
+        } finally {
+            frameJob.cancelAndJoin()
+        }
+    }
+
+    @Test
+    fun finalShortTailKeepsClockAliveAfterHeadReachesTarget() = runBlocking {
+        val coordinator = SmoothTextRevealCoordinator()
+        val key = RevealBlockKey(0)
+        attach(coordinator, key, "ab")
+        val clock = TestFrameClock()
+        val frameJob = launch(clock, start = CoroutineStart.UNDISPATCHED) { coordinator.runFrameClock() }
+        try {
+            clock.send(0L)
+            clock.send(50_000_000L)
+            yield()
+            val snapshot = coordinator.drawSnapshot(key)!!
+            assertEquals(2f, snapshot.progress, 0f)
+            assertTrue(snapshot.glyphAlpha(1) in 0.01f..0.3f)
+            assertFalse("head completion must not skip the trailing fade", coordinator.drained.value)
+            var previous = snapshot.glyphAlpha(1)
+            for (frame in 2..7) {
+                clock.send(frame * 50_000_000L)
+                yield()
+                assertTrue(snapshot.glyphAlpha(1) >= previous)
+                previous = snapshot.glyphAlpha(1)
+            }
+            assertTrue(coordinator.drained.value)
+            assertEquals(1f, snapshot.glyphAlpha(1), 0f)
+        } finally {
+            frameJob.cancelAndJoin()
+        }
     }
 
     private fun attach(

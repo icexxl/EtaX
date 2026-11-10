@@ -111,17 +111,33 @@ class SmoothTextRevealPolicyTest {
 
     @Test
     fun revealSpeedUsesBaseRateThenCatchesUpWithoutCeiling() {
-        assertEquals(36f, smoothRevealSpeed(totalBacklog = 0f), FLOAT_TOLERANCE)
-        assertEquals(45f, smoothRevealSpeed(totalBacklog = 9f), FLOAT_TOLERANCE)
-        assertEquals(100f, smoothRevealSpeed(totalBacklog = 20f), FLOAT_TOLERANCE)
-        assertEquals(5_000f, smoothRevealSpeed(totalBacklog = 1_000f), FLOAT_TOLERANCE)
-        assertEquals(50_000f, smoothRevealSpeed(totalBacklog = 10_000f), FLOAT_TOLERANCE)
+        assertEquals(50f, smoothRevealSpeed(totalBacklog = 0f), FLOAT_TOLERANCE)
+        assertEquals(50f, smoothRevealSpeed(totalBacklog = 15f), FLOAT_TOLERANCE)
+        assertEquals(100f, smoothRevealSpeed(totalBacklog = 30f), FLOAT_TOLERANCE)
+        assertEquals(1_000f, smoothRevealSpeed(totalBacklog = 300f), FLOAT_TOLERANCE)
+        assertEquals(10_000f, smoothRevealSpeed(totalBacklog = 3_000f), FLOAT_TOLERANCE)
     }
 
     @Test
-    fun normalFrameAdvancesFractionallyAtBaseRate() {
+    fun fadeLastsAcrossSeveralGroupsAndReachesOpaqueWithoutSnap() {
+        assertEquals(0f, revealFadeAlpha(0f), FLOAT_TOLERANCE)
+        assertEquals(0.5f, revealFadeAlpha(REVEAL_FADE_SECONDS / 2f), FLOAT_TOLERANCE)
+        assertTrue("three graphemes must still be dim at base 50/s", revealFadeAlpha(3f / 50f) < 0.25f)
+        assertEquals(1f, revealFadeAlpha(REVEAL_FADE_SECONDS), FLOAT_TOLERANCE)
+        assertTrue(revealFadeAlpha(REVEAL_FADE_SECONDS - 0.001f) > 0.999f)
+        assertTrue(REVEAL_FADE_SECONDS * 50f in 12f..14f)
+        var previous = 0f
+        repeat(121) { frame ->
+            val alpha = revealFadeAlpha(frame / 120f)
+            assertTrue(alpha >= previous)
+            previous = alpha
+        }
+    }
+
+    @Test
+    fun normalFrameAdvancesAtSlowerBaseRate() {
         assertEquals(
-            0.6f,
+            50f / 60f,
             advanceSmoothReveal(
                 current = 0f,
                 target = 10f,
@@ -135,7 +151,7 @@ class SmoothTextRevealPolicyTest {
     @Test
     fun catchUpAdvancesBeyondFormerSpeedCap() {
         assertEquals(
-            253f,
+            3f + 1_000f / 0.30f * 0.05f,
             advanceSmoothReveal(
                 current = 3f,
                 target = 1_000f,
@@ -147,6 +163,47 @@ class SmoothTextRevealPolicyTest {
     }
 
     @Test
+    fun smallStreamingChunksStayWithinOneChunkAndDrainPromptly() {
+        for (framesPerSecond in listOf(60, 120)) {
+            val delta = 1f / framesPerSecond
+            var target = 0f
+            var progress = 0f
+            repeat(framesPerSecond * 5) { frame ->
+                // Twelve graphemes every 200 ms: output faster than the display base rate.
+                if (frame % (framesPerSecond / 5) == 0) target += 12f
+                progress = advanceSmoothReveal(progress, target, delta, target - progress)
+                // Input exceeds the base rate; adaptive catch-up must keep lag below half a second.
+                assertTrue("backlog at $framesPerSecond Hz", target - progress <= 30f)
+            }
+            repeat(framesPerSecond) { progress = advanceSmoothReveal(progress, target, delta, target - progress) }
+            assertEquals(target, progress, 0.001f)
+        }
+    }
+
+    @Test
+    fun burstIsSpreadAcrossFramesAndCompletesWithoutALongTail() {
+        for (framesPerSecond in listOf(60, 120)) {
+            val delta = 1f / framesPerSecond
+            val firstFrame = advanceSmoothReveal(0f, 100f, delta, 100f)
+            assertTrue(firstFrame > 0f)
+            assertTrue("a burst must not flash a whole line in one frame", firstFrame < 6f)
+            var progress = firstFrame
+            repeat(framesPerSecond * 2 - 1) {
+                val next = advanceSmoothReveal(progress, 100f, delta, 100f - progress)
+                assertTrue(next >= progress)
+                assertTrue(next <= 100f)
+                progress = next
+            }
+            assertEquals("100 graphemes drain within two seconds", 100f, progress, FLOAT_TOLERANCE)
+        }
+    }
+
+    @Test
+    fun highRefreshRateKeepsFractionalGraphemeFade() {
+        assertEquals(50f / 120f, advanceSmoothReveal(0f, 12f, 1f / 120f, 12f), FLOAT_TOLERANCE)
+    }
+
+    @Test
     fun sustainedFastOutputDoesNotAccumulateUnboundedBacklog() {
         var target = 0f
         var progress = 0f
@@ -154,7 +211,8 @@ class SmoothTextRevealPolicyTest {
             target += 20f
             progress = advanceSmoothReveal(progress, target, 1f / 60f, target - progress)
         }
-        assertTrue(target - progress < 300f)
+        // Even at 1,200 graphemes/s, displayed text stays less than 0.30 s behind.
+        assertTrue(target - progress < 360f)
         repeat(90) {
             progress = advanceSmoothReveal(progress, target, 1f / 60f, target - progress)
         }

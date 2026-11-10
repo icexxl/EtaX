@@ -22,7 +22,8 @@ class AgentBrowserActivityTest {
         val component = ComponentName(context, AgentBrowserActivity::class.java)
         val info = context.packageManager.getActivityInfo(component, 0)
         assertFalse(info.exported)
-        assertEquals(context.applicationInfo.processName, info.processName)
+        // An omitted application process name means the package's default process.
+        assertEquals(context.applicationInfo.processName ?: context.packageName, info.processName)
     }
 
     @Test

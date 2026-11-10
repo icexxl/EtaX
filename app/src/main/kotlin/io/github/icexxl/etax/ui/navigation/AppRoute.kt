@@ -15,9 +15,9 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object OpenClaw : AppRoute
 
-    /** 免 Root 虚拟屏：无线调试配对与 shell 助手连接。 */
+    /** 免 Root 虚拟屏：Shizuku 授权与后台副屏状态。 */
     @Serializable
-    data object ShellHelper : AppRoute
+    data object VirtualScreen : AppRoute
 
     @Serializable
     data object Terminal : AppRoute
