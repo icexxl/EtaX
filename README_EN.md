@@ -1,4 +1,6 @@
-<h1 align="center">Eta</h1>
+<h1 align="center">EtaX</h1>
+
+> This is the personal [icexxl/Eta-message](https://github.com/icexxl/Eta-message) fork, with application ID `io.github.icexxl.etax`. EtaX 1.7.0 ports Eta 3.4.1 while retaining OpenClaw, Shizuku virtual displays, custom background/text motion, reply notifications and the original four-color icon. The upstream introduction and attribution remain below; downloads and demonstrations linked to `Mangi-11/Eta` refer to upstream Eta, not the EtaX APK. See the [port record](docs/UPSTREAM_3_4_1_PORT.md). Upstream is read-only: this fork does not submit upstream PRs, issues or patches.
 
 <p align="center"><a href="README.md">简体中文</a> | <strong>English</strong></p>
 

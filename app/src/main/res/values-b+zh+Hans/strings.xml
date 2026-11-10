@@ -156,6 +156,9 @@
   <string name="appearance_title">外观与主题</string>
   <string name="appearance_group_color">颜色与主题</string>
   <string name="appearance_group_interface">界面与效果</string>
+  <string name="appearance_ui_style">界面样式</string>
+  <string name="appearance_ui_style_coui">COUI</string>
+  <string name="appearance_ui_style_miuix">Miuix</string>
   <string name="appearance_theme_mode">主题模式</string>
   <string name="appearance_theme_system">跟随系统</string>
   <string name="appearance_theme_light">浅色</string>
@@ -1436,4 +1439,8 @@
   <string name="chat_queue_remove">移除排队消息</string>
   <string name="chat_queue_images_only">[%1$d 张图片]</string>
   <string name="chat_queue_files_only">[%1$d 个文件]</string>
+  <string name="conversation_branch">在新对话中分支</string>
+  <string name="conversation_branch_title">%1$s · 分支</string>
+  <string name="conversation_branch_unavailable">无法从此处分支：仅支持上下文完整且工具调用已结束的轮次。</string>
+  <string name="conversation_branch_failed">创建分支失败，原对话已保留，请重试。</string>
 </resources>

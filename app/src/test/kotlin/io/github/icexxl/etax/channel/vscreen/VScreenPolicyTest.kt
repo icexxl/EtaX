@@ -7,6 +7,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VScreenPolicyTest {
+    @Test fun backgroundDisplayRequiresTrustedOwnFocusAndNoTopFocusSteal() {
+        val trustedOwnFocus = (1 shl 10) or (1 shl 14)
+        assertTrue(VScreenPolicy.supportsBackgroundFocus(trustedOwnFocus or (1 shl 16)))
+        assertFalse(VScreenPolicy.supportsBackgroundFocus(trustedOwnFocus))
+        assertFalse(VScreenPolicy.supportsBackgroundFocus((1 shl 10) or (1 shl 16)))
+        assertFalse(VScreenPolicy.supportsBackgroundFocus((1 shl 14) or (1 shl 16)))
+    }
+
+    @Test fun takebackRequiresExactHandedTaskToBeFocusedOnMain() {
+        assertTrue(VScreenPolicy.canTakeBack(12, 0, 0, 12))
+        assertFalse(VScreenPolicy.canTakeBack(12, 0, 0, 13))
+        assertFalse(VScreenPolicy.canTakeBack(12, 9, 0, 12))
+        assertFalse(VScreenPolicy.canTakeBack(12, 0, 9, 12))
+        assertFalse(VScreenPolicy.canTakeBack(-1, 0, 0, -1))
+    }
+
     @Test fun moveRequiresOneOwnedDisplayAndMain() {
         assertTrue(VScreenPolicy.allowsMove(0, 8, setOf(8)))
         assertTrue(VScreenPolicy.allowsMove(8, 0, setOf(8)))

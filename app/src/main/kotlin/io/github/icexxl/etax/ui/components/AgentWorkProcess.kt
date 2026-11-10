@@ -60,8 +60,11 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.itos.coui.shape.CouiCapsuleShape
 import io.github.icexxl.etax.R
 import io.github.icexxl.etax.agent.overlay.toolDisplayName
+import io.github.icexxl.etax.data.model.AppearanceUiStyle
+import io.github.icexxl.etax.ui.app.LocalUiStyle
 import io.github.icexxl.etax.ui.markdown.StreamingMarkdownState
 import io.github.icexxl.etax.ui.model.AgentChatMessageUi
 import io.github.icexxl.etax.ui.model.ThinkingMessageUi

@@ -32,6 +32,7 @@ import io.github.icexxl.etax.agent.tool.AgentToolCapabilities
 import io.github.icexxl.etax.agent.tool.PendingSkillConflictCapabilityParser
 import io.github.icexxl.etax.agent.tool.ToolExecutionDecision
 import io.github.icexxl.etax.agent.voice.EtaAssistantOverlayService
+import io.github.icexxl.etax.config.Prefs
 import io.github.icexxl.etax.core.AndroidAgentLogger
 import io.github.icexxl.etax.core.safeLogType
 import io.github.icexxl.etax.data.repository.AgentMemoryRepository
@@ -288,7 +289,16 @@ internal class AgentRuntimeRunExecutor(
             val runTools = JSONArray(mcpTools.toString()).also { tools ->
                 if (subagentAllowed()) AgentSubagentToolCatalog.appendSchemas(tools)
                 if (historyTool != null) tools.put(AgentConversationToolCatalog.schema())
-                if (characterMemoryTools != null && memoryEnabled) CharacterMemoryTools.appendSchemas(tools)
+                if (characterMemoryTools != null && memoryEnabled) {
+                    val temp = JSONArray().also(CharacterMemoryTools::appendSchemas)
+                    for (index in 0 until temp.length()) {
+                        val schema = temp.getJSONObject(index)
+                        val name = schema.getJSONObject("function").getString("name")
+                        if (Prefs.isToolEnabled(name)) {
+                            tools.put(schema)
+                        }
+                    }
+                }
             }
             val runToolExecutor = AgentModelClient.ToolExecutor { call ->
                 if (call.name in AgentSubagentToolCatalog.names) {
@@ -308,7 +318,17 @@ internal class AgentRuntimeRunExecutor(
                 } else if (call.name == AgentConversationToolCatalog.READ_HISTORY && historyTool != null) {
                     historyTool.execute(call)
                 } else if (call.name in CharacterMemoryTools.NAMES && characterMemoryTools != null) {
-                    characterMemoryTools.execute(call)
+                    if (!Prefs.isToolEnabled(call.name)) {
+                        AgentModelClient.ToolResult(
+                            JSONObject()
+                                .put("ok", false)
+                                .put("code", "TOOL_DISABLED")
+                                .put("message", "工具 ${call.name} 已在工具列表中关闭，本次未执行")
+                                .toString(),
+                        )
+                    } else {
+                        characterMemoryTools.execute(call)
+                    }
                 } else routingExecutor.execute(call).also { result ->
                     if (call.name == "memory_write") {
                         runCatching { JSONObject(result.content) }.getOrNull()

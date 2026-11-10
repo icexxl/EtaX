@@ -19,6 +19,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Surface
 import io.github.icexxl.etax.BuildConfig
+import io.github.icexxl.etax.agent.virtualdisplay.CanvasRoutingPolicy
 
 private fun tr(zh: String, en: String): String =
     if (java.util.Locale.getDefault().language.startsWith("zh")) zh else en
@@ -573,17 +574,41 @@ class VScreenDisplayService : Binder {
 
     private fun create(name: String, w: Int, h: Int, dpi: Int, requested: Int, surface: Surface): VirtualDisplay {
         val dm = displayManager()
-        val candidates = if (requested != 0) listOf(requested) else defaultFlagLadder()
+        val candidates = if (requested != 0) listOf(requested) else listOf(
+            TRUSTED or OWN_FOCUS or STEAL_TOP_FOCUS_DISABLED or PUBLIC or OWN_CONTENT_ONLY or SUPPORTS_TOUCH or
+                OWN_DISPLAY_GROUP or ALWAYS_UNLOCKED or TOUCH_FEEDBACK_DISABLED,
+        )
         var last: Throwable? = null
         for (f in candidates) {
             try {
+                require(VScreenPolicy.supportsBackgroundFocus(f)) {
+                    "Virtual display does not isolate focus from the main display"
+                }
                 val vd = dm.createVirtualDisplay(name, w, h, dpi, surface, f)
                     ?: throw IllegalStateException("createVirtualDisplay returned null")
+                if (!applyImePolicyHide(vd.display.displayId)) {
+                    vd.release()
+                    throw IllegalStateException("Virtual display IME isolation is unavailable")
+                }
                 lastFlags = f
                 return vd
             } catch (t: Throwable) { last = t }
         }
         throw last ?: IllegalStateException("no flags tried")
+    }
+
+    private fun applyImePolicyHide(displayId: Int): Boolean = try {
+        val global = Class.forName("android.view.WindowManagerGlobal")
+        val service = global.getMethod("getWindowManagerService").invoke(null) ?: return false
+        val setPolicy = service.javaClass.methods.firstOrNull { it.name == "setDisplayImePolicy" && it.parameterCount == 2 }
+            ?: return false
+        val getPolicy = service.javaClass.methods.firstOrNull { it.name == "getDisplayImePolicy" && it.parameterCount == 1 }
+            ?: return false
+        if (getPolicy.invoke(service, displayId) == CanvasRoutingPolicy.DISPLAY_IME_POLICY_HIDE) return true
+        runCatching { setPolicy.invoke(service, displayId, CanvasRoutingPolicy.DISPLAY_IME_POLICY_HIDE) }
+        getPolicy.invoke(service, displayId) == CanvasRoutingPolicy.DISPLAY_IME_POLICY_HIDE
+    } catch (_: Exception) {
+        false
     }
 
     private fun displayManager(): DisplayManager {

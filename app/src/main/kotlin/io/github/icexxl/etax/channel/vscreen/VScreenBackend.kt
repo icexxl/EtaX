@@ -133,6 +133,12 @@ internal object VScreenBackend {
         (rows.firstOrNull { it.visible && it.activityType !in 2..5 } ?: rows.firstOrNull { it.visible } ?: rows.firstOrNull())?.taskId
     }
     fun displayOfTask(taskId: Int): Result<Int?> = call(VScreenDisplayService.DISPLAY_OF_TASK, { it.writeInt(taskId) }) { it.readInt().takeIf { id -> id >= 0 } }
+    data class FocusedTask(val displayId: Int, val taskId: Int?)
+    fun focusedTask(): Result<FocusedTask> = call(VScreenDisplayService.FOCUSED, {}) { r ->
+        FocusedTask(r.readInt(), r.readInt().takeIf { id -> id >= 0 })
+    }
+    fun focusTask(taskId: Int): Result<Boolean> =
+        call(VScreenDisplayService.FOCUS_TASK, { it.writeInt(taskId) }) { it.readInt() != 0 }
     fun moveTask(taskId: Int, displayId: Int): Result<Boolean> = call(VScreenDisplayService.MOVE_TASK, { it.writeInt(taskId); it.writeInt(displayId) }) { r ->
         val ok = r.readInt() != 0; val detail = r.readString(); if (!ok) error(detail ?: "Move failed"); true
     }

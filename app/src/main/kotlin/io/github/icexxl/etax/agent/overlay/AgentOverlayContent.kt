@@ -87,6 +87,10 @@ import io.github.icexxl.etax.ui.markdown.MarkdownTone
 import io.github.icexxl.etax.ui.markdown.StaticMarkdown
 import io.github.icexxl.etax.R
 import io.github.icexxl.etax.agent.virtualdisplay.VirtualDisplaySnapshot
+import io.github.icexxl.etax.data.model.AppearanceUiStyle
+import io.github.icexxl.etax.ui.app.LocalUiStyle
+import io.github.icexxl.etax.ui.components.coui.CouiButton
+import io.github.icexxl.etax.ui.components.coui.CouiButtonRole
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
@@ -272,23 +276,41 @@ internal fun OverlaySupplementInput(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(
-                text = stringResource(R.string.action_cancel),
-                onClick = onCancel,
-                minWidth = 44.dp,
-                minHeight = 32.dp,
-                insideMargin = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            TextButton(
-                text = stringResource(R.string.overlay_send),
-                onClick = onSend,
-                enabled = value.isNotBlank(),
-                minWidth = 44.dp,
-                minHeight = 32.dp,
-                insideMargin = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-            )
+            if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
+                CouiButton(
+                    text = stringResource(R.string.action_cancel),
+                    onClick = onCancel,
+                    minHeight = 32.dp,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                CouiButton(
+                    text = stringResource(R.string.overlay_send),
+                    onClick = onSend,
+                    enabled = value.isNotBlank(),
+                    role = CouiButtonRole.Primary,
+                    minHeight = 32.dp,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                )
+            } else {
+                TextButton(
+                    text = stringResource(R.string.action_cancel),
+                    onClick = onCancel,
+                    minWidth = 44.dp,
+                    minHeight = 32.dp,
+                    insideMargin = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                TextButton(
+                    text = stringResource(R.string.overlay_send),
+                    onClick = onSend,
+                    enabled = value.isNotBlank(),
+                    minWidth = 44.dp,
+                    minHeight = 32.dp,
+                    insideMargin = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
+            }
         }
     }
 }
@@ -490,19 +512,38 @@ private fun ResultCardActions(
                 tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
             )
         }
-        TextButton(
-            text = stringResource(R.string.overlay_result_done),
-            onClick = onDone,
-            modifier = Modifier.weight(1f),
-            minHeight = 44.dp,
-        )
-        TextButton(
-            text = stringResource(R.string.overlay_result_open_eta),
-            onClick = onOpenEta,
-            modifier = Modifier.weight(1f),
-            minHeight = 44.dp,
-            colors = ButtonDefaults.textButtonColorsPrimary(),
-        )
+        val doneText = stringResource(R.string.overlay_result_done)
+        val primaryText = stringResource(R.string.overlay_result_open_eta)
+        val onPrimary = onOpenEta
+        if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
+            CouiButton(
+                text = doneText,
+                onClick = onDone,
+                modifier = Modifier.weight(1f),
+                minHeight = 44.dp,
+            )
+            CouiButton(
+                text = primaryText,
+                onClick = onPrimary,
+                role = CouiButtonRole.Primary,
+                modifier = Modifier.weight(1f),
+                minHeight = 44.dp,
+            )
+        } else {
+            TextButton(
+                text = doneText,
+                onClick = onDone,
+                modifier = Modifier.weight(1f),
+                minHeight = 44.dp,
+            )
+            TextButton(
+                text = primaryText,
+                onClick = onPrimary,
+                modifier = Modifier.weight(1f),
+                minHeight = 44.dp,
+                colors = ButtonDefaults.textButtonColorsPrimary(),
+            )
+        }
     }
 }
 

@@ -44,7 +44,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.icexxl.etax.agent.roleplay.CharacterMacros
 import io.github.icexxl.etax.agent.roleplay.CharacterProfile
+import io.github.icexxl.etax.data.model.AppearanceUiStyle
+import io.github.icexxl.etax.ui.app.LocalUiStyle
 import io.github.icexxl.etax.ui.components.CharacterAvatar
+import io.github.icexxl.etax.ui.components.coui.CouiButton
+import io.github.icexxl.etax.ui.components.coui.CouiButtonRole
 import io.github.icexxl.etax.ui.components.rememberCharacterImage
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
@@ -212,13 +216,23 @@ internal fun CharacterHero(
                 )
             }
             Spacer(Modifier.height(20.dp))
-            TextButton(
-                text = "开始对话",
-                enabled = !busy,
-                onClick = onStart,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-            )
+            if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
+                CouiButton(
+                    text = "开始对话",
+                    enabled = !busy,
+                    onClick = onStart,
+                    role = CouiButtonRole.Primary,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                TextButton(
+                    text = "开始对话",
+                    enabled = !busy,
+                    onClick = onStart,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
+            }
         }
     }
 }

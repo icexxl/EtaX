@@ -17,7 +17,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.github.icexxl.etax.R
+import io.github.icexxl.etax.data.model.AppearanceUiStyle
 import io.github.icexxl.etax.data.repository.LanguageSettingsRepository
+import io.github.icexxl.etax.ui.app.LocalUiStyle
+import io.github.icexxl.etax.ui.components.coui.CouiDropdownPreference
+import io.github.icexxl.etax.ui.components.coui.CouiSettingsIcon
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -51,17 +55,35 @@ internal fun LanguagePreference(
     val selectedIndex = selectedLocale?.let { selected ->
         locales.indexOfFirst { LocaleList.matchesLanguageAndScript(it, selected) } + 1
     } ?: 0
+    val onSelect: (Int) -> Unit = { index ->
+        if (index in labels.indices) {
+            repository.selectLocale(if (index == 0) null else locales[index - 1])
+            selectedLocale = repository.selectedLocale()
+        }
+    }
 
-    OverlayDropdownPreference(
-        title = stringResource(R.string.settings_language),
-        items = labels,
-        selectedIndex = selectedIndex,
-        startAction = startAction,
-        onSelectedIndexChange = { index ->
-            if (index in labels.indices) {
-                repository.selectLocale(if (index == 0) null else locales[index - 1])
-                selectedLocale = repository.selectedLocale()
-            }
-        },
-    )
+    when (LocalUiStyle.current) {
+        AppearanceUiStyle.COUI -> {
+            CouiDropdownPreference(
+                title = stringResource(R.string.settings_language),
+                items = labels,
+                selectedIndex = selectedIndex,
+                icon = if (startAction != null) {
+                    { CouiSettingsIcon(icon = Icons.Rounded.Language, tint = iconTint) }
+                } else {
+                    null
+                },
+                onSelectedIndexChange = onSelect,
+            )
+        }
+        AppearanceUiStyle.MIUIX -> {
+            OverlayDropdownPreference(
+                title = stringResource(R.string.settings_language),
+                items = labels,
+                selectedIndex = selectedIndex,
+                startAction = startAction,
+                onSelectedIndexChange = onSelect,
+            )
+        }
+    }
 }

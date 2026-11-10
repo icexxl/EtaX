@@ -9,6 +9,12 @@ internal object VScreenPolicy {
     fun pickAdoptable(displays: List<VScreenBackend.Existing>, name: String): VScreenBackend.Existing? =
         displays.firstOrNull { it.name == name } ?: displays.singleOrNull()
 
+    fun supportsBackgroundFocus(flags: Int): Boolean =
+        flags and (1 shl 10) != 0 && flags and (1 shl 14) != 0 && flags and (1 shl 16) != 0
+
+    fun canTakeBack(taskId: Int, taskDisplayId: Int?, focusedDisplayId: Int?, focusedTaskId: Int?): Boolean =
+        taskId > 0 && taskDisplayId == 0 && focusedDisplayId == 0 && focusedTaskId == taskId
+
     fun allowsMove(source: Int, target: Int, owned: Set<Int>): Boolean =
         (target == 0 && source > 0 && source in owned) ||
             (source == 0 && target > 0 && target in owned)

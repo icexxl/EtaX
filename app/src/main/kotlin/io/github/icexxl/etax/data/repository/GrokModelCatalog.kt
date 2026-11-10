@@ -3,6 +3,7 @@ package io.github.icexxl.etax.data.repository
 import io.github.icexxl.etax.data.model.Model
 import io.github.icexxl.etax.data.model.ModelReasoningCapabilities
 import io.github.icexxl.etax.data.model.ReasoningEffort
+import io.github.icexxl.etax.data.provider.ProviderConnectionProfile
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -27,7 +28,7 @@ internal object GrokModelCatalog {
             visible++
             val backend = item["apiBackend"] ?: item["api_backend"]
             if (backend != null && backend != JsonNull &&
-                (backend as? JsonPrimitive)?.takeIf { it.isString }?.content != "chat_completions"
+                (backend as? JsonPrimitive)?.takeIf { it.isString }?.content != ProviderConnectionProfile.XAI_GROK.endpointMode
             ) {
                 unsupported++
                 return@mapIndexedNotNull null

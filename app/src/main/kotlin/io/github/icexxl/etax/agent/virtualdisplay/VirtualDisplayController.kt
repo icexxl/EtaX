@@ -4,6 +4,7 @@ import android.app.ActivityOptions
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.ColorSpace
 import android.graphics.PixelFormat
 import android.graphics.Point
 import android.hardware.display.DisplayManager
@@ -52,6 +53,8 @@ import org.lsposed.hiddenapibypass.HiddenApiBypass
 internal object VirtualDisplayController {
 
     private val lock = Any()
+    private val creationGate = Any()
+    private val sessionState = VirtualDisplaySessionState()
     private val mutableSnapshots = MutableStateFlow(VirtualDisplaySnapshot.Inactive)
     val snapshots: StateFlow<VirtualDisplaySnapshot> = mutableSnapshots.asStateFlow()
 
@@ -75,6 +78,8 @@ internal object VirtualDisplayController {
     @Volatile
     private var appContextOrNull: Context? = null
     private var processSupervisor: ShellProcessSupervisor? = null
+    private var displayListener: DisplayManager.DisplayListener? = null
+    private var sessionToken: VirtualDisplaySessionState.Token? = null
 
     private var activeDisplayId: Int = Display.DEFAULT_DISPLAY
     private var displayWidth: Int = 1080
@@ -104,7 +109,7 @@ internal object VirtualDisplayController {
     }
 
     fun currentDisplayId(): Int = synchronized(lock) {
-        activeDisplayId.takeIf { CanvasRoutingPolicy.isVirtualDisplay(it) } ?: Display.DEFAULT_DISPLAY
+        sessionState.active?.displayId ?: Display.DEFAULT_DISPLAY
     }
 
     fun isShellDisplay(displayId: Int): Boolean = synchronized(lock) {
@@ -116,18 +121,31 @@ internal object VirtualDisplayController {
         shellDisplayId != displayId || (VScreenBackend.isReady() &&
             VScreenBackend.list().getOrNull()?.any { it.displayId == displayId } == true)
 
+    private fun isActiveDisplayValid(displayId: Int): Boolean {
+        val active = synchronized(lock) { sessionState.active?.displayId == displayId && mutableSnapshots.value.active }
+        if (!active || !CanvasRoutingPolicy.isVirtualDisplay(displayId)) return false
+        val context = appContextOrNull ?: return false
+        val manager = context.getSystemService(DisplayManager::class.java) ?: return false
+        val usable = isDisplayUsable(manager, displayId) && shellDisplayAlive(context, displayId)
+        if (!usable) {
+            val token = synchronized(lock) { sessionToken.takeIf { sessionState.active?.displayId == displayId } }
+            if (token != null) releaseSession(context, { RootAccess.isGranted }, token)
+        }
+        return usable
+    }
+
     /** Never direct a virtual-screen key to the physical display. */
     fun injectShellKey(displayId: Int, keyCode: Int): Boolean {
-        if (!isShellDisplay(displayId)) return false
+        if (!isShellDisplay(displayId) || !isActiveDisplayValid(displayId)) return false
         VScreenBackend.touch(displayId)
         return VScreenBackend.injectKey(displayId, keyCode, false).getOrDefault(false)
     }
 
     fun injectBackendTap(displayId: Int, x: Int, y: Int): Boolean =
-        injectViaVScreen(displayId, x, y, false)
+        isActiveDisplayValid(displayId) && injectViaVScreen(displayId, x, y, false)
 
     fun injectBackendSwipe(displayId: Int, x1: Int, y1: Int, x2: Int, y2: Int, duration: Int): Boolean =
-        injectSwipeViaVScreen(displayId, x1, y1, x2, y2, duration)
+        isActiveDisplayValid(displayId) && injectSwipeViaVScreen(displayId, x1, y1, x2, y2, duration)
 
     /** A successful am command alone does not establish the display routing outcome. */
     private fun awaitPackageOnDisplay(displayId: Int, packageName: String): Boolean {
@@ -158,11 +176,9 @@ internal object VirtualDisplayController {
     }
 
     /**
-     * 确保受信任虚拟屏已就绪并返回其 displayId；不可用时返回 null，由调用方平滑回退至物理主屏。
+     * 确保受信任虚拟屏已就绪；失败返回 null，调用方不得将虚拟屏动作回退到物理主屏。
      */
     /** Serializes screen creation; the state lock stays free for UI readers. */
-    private val creationGate = Any()
-
     fun ensureVirtualDisplay(
         context: Context,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
@@ -170,116 +186,141 @@ internal object VirtualDisplayController {
         val appContext = context.applicationContext
         appContextOrNull = appContext
         val (width, height, densityDpi) = resolvePhysicalDisplayMetrics(appContext)
-        val current = synchronized(lock) {
-            activeDisplayId.takeIf { CanvasRoutingPolicy.isVirtualDisplay(it) && imageReader != null }
-        }
-        if (current != null && shellDisplayAlive(appContext, current)) return current
-
         synchronized(creationGate) {
-        val raced = synchronized(lock) {
-            activeDisplayId.takeIf { CanvasRoutingPolicy.isVirtualDisplay(it) && imageReader != null }
-        }
-        if (raced != null) return raced
-        synchronized(lock) {
-            releaseLocked(appContext, rootAvailable)
+            val manager = appContext.getSystemService(DisplayManager::class.java) ?: return null
+            val current = synchronized(lock) { sessionState.active }
+            if (current != null && shellDisplayAlive(appContext, current.displayId) &&
+                isDisplayUsable(manager, current.displayId)
+            ) return current.displayId
+            if (current != null) releaseSession(appContext, rootAvailable, current.token)
 
+            val token = synchronized(lock) {
+                sessionState.begin().also { sessionToken = it }
+            }
             val thread = HandlerThread("eta-virtual-display-frame").apply { start() }
             val handler = Handler(thread.looper)
-            val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
+            val reader = try {
+                ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
+            } catch (error: Exception) {
+                thread.quitSafely()
+                synchronized(lock) { sessionState.invalidate(token); sessionToken = null }
+                return null
+            }
             reader.setOnImageAvailableListener(::onFrameAvailable, handler)
+            synchronized(lock) {
+                appContextOrNull = appContext
+                frameThread = thread
+                frameHandler = handler
+                imageReader = reader
+                displayWidth = width
+                displayHeight = height
+                displayDensityDpi = densityDpi
+            }
 
-            frameThread = thread
-            frameHandler = handler
-            imageReader = reader
-            displayWidth = width
-            displayHeight = height
-            displayDensityDpi = densityDpi
-
-        }
-
-        // Binder-heavy creation happens without the state lock held.
-        if (VScreenBackend.isReady()) {
-            return attachDaemonSession(appContext, rootAvailable)
-        }
-
-        synchronized(lock) {
-            val activeReader = imageReader ?: return null
-            val createdInProcess = tryCreateInProcessVirtualDisplay(
-                appContext = appContext,
-                surface = activeReader.surface,
-                width = width,
-                height = height,
-                densityDpi = densityDpi,
-            )
-            if (createdInProcess != null) {
-                val id = createdInProcess.display?.displayId ?: Display.INVALID_DISPLAY
-                if (CanvasRoutingPolicy.isVirtualDisplay(id)) {
-                    inProcessVirtualDisplay = createdInProcess
+            var accepted = false
+            var registeredListener: DisplayManager.DisplayListener? = null
+            try {
+                var id: Int? = null
+                if (VScreenBackend.isReady()) {
+                    id = attachDaemonSession(appContext, rootAvailable, token)
+                } else {
+                    val created = tryCreateInProcessVirtualDisplay(appContext, reader.surface, width, height, densityDpi)
+                    if (created != null) {
+                        val createdId = created.display?.displayId ?: Display.INVALID_DISPLAY
+                        if (CanvasRoutingPolicy.isVirtualDisplay(createdId)) {
+                            synchronized(lock) { inProcessVirtualDisplay = created }
+                            id = createdId
+                        } else created.release()
+                    }
+                    if (id == null && rootAvailable()) {
+                        id = tryCreateRootBridgedVirtualDisplay(appContext, reader.surface, width, height, densityDpi, rootAvailable)
+                    }
+                }
+                if (id == null || !CanvasRoutingPolicy.isVirtualDisplay(id) || !isDisplayUsable(manager, id)) return null
+                val listener = object : DisplayManager.DisplayListener {
+                    override fun onDisplayAdded(displayId: Int) = Unit
+                    override fun onDisplayChanged(displayId: Int) {
+                        if (displayId == id && !isDisplayUsable(manager, id)) releaseSession(appContext, rootAvailable, token)
+                    }
+                    override fun onDisplayRemoved(displayId: Int) {
+                        if (displayId == id) releaseSession(appContext, rootAvailable, token)
+                    }
+                }
+                manager.registerDisplayListener(listener, handler)
+                registeredListener = listener
+                val packageName = if (isShellDisplay(id)) {
+                    VScreenBackend.listTasks(id).getOrNull()?.firstOrNull { it.visible }?.pkg.orEmpty()
+                } else ""
+                synchronized(lock) {
+                    if (!sessionState.activate(token, id)) return null
+                    displayListener = listener
                     activeDisplayId = id
                     mutableSnapshots.value = VirtualDisplaySnapshot(
-                        active = true,
-                        displayId = id,
-                        width = width,
-                        height = height,
+                        active = true, displayId = id, width = displayWidth, height = displayHeight,
+                        packageName = packageName,
                     )
-                    AndroidAgentLogger.info("Virtual display created in-process: displayId=$id size=${width}x$height")
-                    return id
+                    frameHandler?.post(heartbeat)
+                    accepted = true
                 }
-                runCatching { createdInProcess.release() }
-            }
-
-            if (rootAvailable()) {
-                val rootId = tryCreateRootBridgedVirtualDisplay(
-                    appContext = appContext,
-                    surface = activeReader.surface,
-                    width = width,
-                    height = height,
-                    densityDpi = densityDpi,
-                    rootAvailable = rootAvailable,
-                )
-                if (rootId != null && CanvasRoutingPolicy.isVirtualDisplay(rootId)) {
-                    activeDisplayId = rootId
-                    mutableSnapshots.value = VirtualDisplaySnapshot(
-                        active = true,
-                        displayId = rootId,
-                        width = width,
-                        height = height,
-                    )
-                    AndroidAgentLogger.info("Virtual display created via root bridge: displayId=$rootId size=${width}x$height")
-                    return rootId
+                AndroidAgentLogger.info("Virtual display ready: displayId=$id size=${displayWidth}x$displayHeight")
+                return id
+            } catch (exception: Exception) {
+                AndroidAgentLogger.warn("Virtual display creation failed: type=${exception.safeLogType()}")
+                return null
+            } finally {
+                if (!accepted) {
+                    registeredListener?.let { runCatching { manager.unregisterDisplayListener(it) } }
+                    releaseSession(appContext, rootAvailable, token)
                 }
             }
-
-            releaseLocked(appContext, rootAvailable)
-            return null
-        }
         }
     }
 
+    private fun isDisplayUsable(manager: DisplayManager, displayId: Int): Boolean = try {
+        val display = manager.getDisplay(displayId)
+        display != null && display.isValid && (
+            if (shellDisplayId == displayId) {
+                VScreenBackend.list().getOrNull()?.firstOrNull { it.displayId == displayId }
+                    ?.let { VScreenPolicy.supportsBackgroundFocus(it.flags) } == true
+            } else CanvasRoutingPolicy.hasRequiredDisplayFlags(display.flags)
+        )
+    } catch (exception: Exception) {
+        AndroidAgentLogger.warnThrottled("virtual_display_validation_failed") {
+            "Virtual display validation failed: type=${exception.safeLogType()}"
+        }
+        false
+    }
+
     /** Adopts or creates the daemon screen. Returns null (and resets state) on any rejection. */
-    private fun attachDaemonSession(appContext: Context, rootAvailable: () -> Boolean): Int? {
+    private fun attachDaemonSession(
+        appContext: Context,
+        rootAvailable: () -> Boolean,
+        token: VirtualDisplaySessionState.Token,
+    ): Int? {
         val readerAtEntry = synchronized(lock) { imageReader } ?: return null
         val remoteDisplays = VScreenBackend.list().getOrNull()
-            ?: return abandonDaemonSession(appContext, rootAvailable)
+            ?: return null
         val existing = VScreenPolicy.pickAdoptable(remoteDisplays, CanvasRoutingPolicy.VIRTUAL_DISPLAY_NAME)
         val daemonId = if (existing != null) {
-            val target = synchronized(lock) {
-                if (existing.width != displayWidth || existing.height != displayHeight) {
-                    readerAtEntry.setOnImageAvailableListener(null, null)
-                    readerAtEntry.close()
-                    ImageReader.newInstance(existing.width, existing.height, PixelFormat.RGBA_8888, 3)
-                        .also { it.setOnImageAvailableListener(::onFrameAvailable, frameHandler) }
-                        .also { resized ->
-                            imageReader = resized
-                            displayWidth = existing.width
-                            displayHeight = existing.height
-                            displayDensityDpi = existing.dpi
+            val needsResize = existing.width != displayWidth || existing.height != displayHeight
+            val target = if (needsResize) {
+                ImageReader.newInstance(existing.width, existing.height, PixelFormat.RGBA_8888, 3)
+                    .also { it.setOnImageAvailableListener(::onFrameAvailable, frameHandler) }
+                    .also { resized -> synchronized(lock) {
+                        if (!sessionState.isCurrent(token)) {
+                            resized.close()
+                            return null
                         }
-                } else {
-                    readerAtEntry
-                }
+                        imageReader = resized
+                        displayWidth = existing.width
+                        displayHeight = existing.height
+                        displayDensityDpi = existing.dpi
+                    } }
+            } else readerAtEntry
+            VScreenBackend.setSurface(existing.displayId, target.surface).getOrNull()?.let {
+                if (needsResize) readerAtEntry.close()
+                existing.displayId
             }
-            VScreenBackend.setSurface(existing.displayId, target.surface).getOrNull()?.let { existing.displayId }
         } else {
             VScreenBackend.create(
                 CanvasRoutingPolicy.VIRTUAL_DISPLAY_NAME,
@@ -288,12 +329,12 @@ internal object VirtualDisplayController {
         }
         if (daemonId == null || !CanvasRoutingPolicy.isVirtualDisplay(daemonId)) {
             // A rejected daemon operation must not silently change backends or move tasks.
-            return abandonDaemonSession(appContext, rootAvailable)
+            return null
         }
         val packageName = VScreenBackend.listTasks(daemonId).getOrNull()
             ?.firstOrNull { it.visible }?.pkg.orEmpty()
         val committed = synchronized(lock) {
-            if (imageReader == null) {
+            if (imageReader == null || !sessionState.isCurrent(token)) {
                 false
             } else {
                 shellDisplayId = daemonId
@@ -308,17 +349,14 @@ internal object VirtualDisplayController {
         }
         if (!committed) {
             // The session was detached while we were attaching; do not leak the daemon screen.
-            thread(name = "etax-vscreen-release", isDaemon = true) {
-                runCatching { VScreenBackend.release(daemonId) }
+            // This may be an adopted daemon display owned by another app lifetime; stale attach
+            // must not explicitly destroy it. Parking is harmless and lets the daemon TTL apply.
+            thread(name = "etax-vscreen-park-stale", isDaemon = true) {
+                runCatching { VScreenBackend.park(daemonId) }
             }
             return null
         }
         return daemonId
-    }
-
-    private fun abandonDaemonSession(appContext: Context, rootAvailable: () -> Boolean): Int? {
-        synchronized(lock) { releaseLocked(appContext, rootAvailable) }
-        return null
     }
 
     /**
@@ -330,13 +368,17 @@ internal object VirtualDisplayController {
         appName: String,
         launchIntent: Intent,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
+        checkCancellation: () -> Unit = {},
     ): Int? {
+        checkCancellation()
         val displayId = ensureVirtualDisplay(context, rootAvailable) ?: return null
+        checkCancellation()
         val appContext = context.applicationContext
         if (!isShellDisplay(displayId)) {
             mutePackageAudioFocusIfPossible(appContext, packageName, rootAvailable)
         }
 
+        if (!isActiveDisplayValid(displayId)) return null
         val startedInProcess = shellDisplayId != displayId && runCatching {
             val intent = Intent(launchIntent).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
@@ -361,12 +403,8 @@ internal object VirtualDisplayController {
             // Root 下补发一次指定 displayId 的 am start，确保后台启动限制或跨屏栈迁移生效
             if (rootAvailable()) {
                 val userId = DeviceToolContract.appUserId(appContext)
-                val component = launchIntent.component?.flattenToShortString()
-                val cmd = if (!component.isNullOrBlank()) {
-                    "am start --user $userId --display $displayId -n ${DeviceToolContract.quote(component)}"
-                } else {
-                    "monkey -p ${DeviceToolContract.quote(packageName)} -c android.intent.category.LAUNCHER 1"
-                }
+                val component = launchIntent.component?.flattenToShortString() ?: return null
+                val cmd = "am start --user $userId --display $displayId -n ${DeviceToolContract.quote(component)}"
                 if (!startedInProcess) {
                     val exec = BoundedRootCommandExecutor(AndroidAgentLogger, rootAvailable = rootAvailable)
                     try {
@@ -402,9 +440,13 @@ internal object VirtualDisplayController {
         intent: Intent,
         targetLabel: String,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
+        checkCancellation: () -> Unit = {},
     ): Int? {
+        checkCancellation()
         val displayId = ensureVirtualDisplay(context, rootAvailable) ?: return null
+        checkCancellation()
         val appContext = context.applicationContext
+        if (!isActiveDisplayValid(displayId)) return null
         if (shellDisplayId == displayId) {
             VScreenBackend.touch(displayId)
             val packageName = intent.`package` ?: intent.component?.packageName
@@ -459,6 +501,29 @@ internal object VirtualDisplayController {
      * 将虚拟屏中正在运行的应用无缝破壁移交到物理主屏（DEFAULT_DISPLAY）。
      * 先触发 UI 层的 260ms 全屏放大贴合过渡，同时在底层原位迁移 RootTask。
      */
+    fun onTopPackageObserved(
+        context: Context,
+        observedPackage: String,
+        rootAvailable: () -> Boolean = { RootAccess.isGranted },
+    ) {
+        val pkg = observedPackage.trim()
+        if (pkg.isBlank() || pkg == "android" || pkg == "com.android.systemui" || pkg == context.packageName) return
+        val snapshot = synchronized(lock) { mutableSnapshots.value }
+        if (!snapshot.active || snapshot.packageName == pkg) return
+        val appContext = context.applicationContext
+        val appName = runCatching {
+            val info = appContext.packageManager.getApplicationInfo(pkg, 0)
+            appContext.packageManager.getApplicationLabel(info).toString().trim().ifBlank { pkg }
+        }.getOrDefault(pkg)
+        if (!isShellDisplay(snapshot.displayId)) mutePackageAudioFocusIfPossible(appContext, pkg, rootAvailable)
+        synchronized(lock) {
+            val current = mutableSnapshots.value
+            if (current.active && current.displayId == snapshot.displayId) {
+                mutableSnapshots.value = current.copy(packageName = pkg, appName = appName)
+            }
+        }
+    }
+
     fun handoffToMainDisplay(
         context: Context,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
@@ -481,7 +546,8 @@ internal object VirtualDisplayController {
 
         val moved = if (isShellDisplay(snapshot.displayId)) {
             val taskId = VScreenBackend.topTaskId(snapshot.displayId).getOrNull()
-            taskId != null && VScreenBackend.moveTask(taskId, Display.DEFAULT_DISPLAY).getOrDefault(false)
+            taskId != null && VScreenBackend.moveTask(taskId, Display.DEFAULT_DISPLAY).getOrDefault(false) &&
+                VScreenBackend.displayOfTask(taskId).getOrNull() == Display.DEFAULT_DISPLAY
         } else moveVirtualTaskToMainDisplay(
             context = appContext,
             displayId = snapshot.displayId,
@@ -519,9 +585,11 @@ internal object VirtualDisplayController {
         val snapshot = synchronized(lock) { mutableSnapshots.value }
         if (!snapshot.active || !CanvasRoutingPolicy.isVirtualDisplay(snapshot.displayId)) return false
         if (!isShellDisplay(snapshot.displayId)) return handoffToMainDisplay(context)
+        if (!isActiveDisplayValid(snapshot.displayId)) return false
         VScreenBackend.touch(snapshot.displayId)
         val taskId = VScreenBackend.topTaskId(snapshot.displayId).getOrNull() ?: return false
-        val moved = VScreenBackend.moveTask(taskId, Display.DEFAULT_DISPLAY).getOrDefault(false)
+        val moved = VScreenBackend.moveTask(taskId, Display.DEFAULT_DISPLAY).getOrDefault(false) &&
+            VScreenBackend.displayOfTask(taskId).getOrNull() == Display.DEFAULT_DISPLAY
         if (moved) synchronized(lock) {
             handedOverTaskId = taskId
             handedOverDisplayId = snapshot.displayId
@@ -537,13 +605,19 @@ internal object VirtualDisplayController {
         val taskId = synchronized(lock) {
             handedOverTaskId.takeIf { it > 0 && handedOverDisplayId == snapshot.displayId }
         } ?: return false
-        if (VScreenBackend.displayOfTask(taskId).getOrNull() != Display.DEFAULT_DISPLAY) return false
+        val taskDisplay = VScreenBackend.displayOfTask(taskId).getOrNull()
+        if (taskDisplay != Display.DEFAULT_DISPLAY) return false
         VScreenBackend.touch(snapshot.displayId)
-        val moved = VScreenBackend.moveTask(taskId, snapshot.displayId).getOrDefault(false)
+        val focused = VScreenBackend.focusedTask().getOrNull()
+        if (!VScreenPolicy.canTakeBack(taskId, taskDisplay, focused?.displayId, focused?.taskId)) return false
+        val moved = VScreenBackend.moveTask(taskId, snapshot.displayId).getOrDefault(false) &&
+            VScreenBackend.displayOfTask(taskId).getOrNull() == snapshot.displayId
         if (moved) synchronized(lock) {
-            handedOverTaskId = -1
-            handedOverDisplayId = Display.INVALID_DISPLAY
-            mutableSnapshots.value = mutableSnapshots.value.copy(userControlling = false)
+            if (handedOverTaskId == taskId && handedOverDisplayId == snapshot.displayId) {
+                handedOverTaskId = -1
+                handedOverDisplayId = Display.INVALID_DISPLAY
+                mutableSnapshots.value = mutableSnapshots.value.copy(userControlling = false)
+            }
         }
         return moved
     }
@@ -706,101 +780,94 @@ internal object VirtualDisplayController {
     fun release(
         context: Context? = null,
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
-    ) {
-        synchronized(lock) {
-            releaseLocked(context, rootAvailable)
-        }
-    }
+    ) = releaseSession(context, rootAvailable)
 
-    /** Close app-owned preview resources without destroying the daemon-owned task/display. */
+    /** Park the daemon display before closing its frame consumer; daemon ownership survives detach. */
     fun detach(context: Context? = appContextOrNull) {
-        val detachedId: Int
-        synchronized(lock) {
-            detachedId = shellDisplayId
+        val detached = synchronized(lock) {
+            val token = sessionToken
+            val id = shellDisplayId
+            sessionState.invalidate(token)
+            sessionToken = null
+            mutableSnapshots.value = VirtualDisplaySnapshot.Inactive
+            highFrequencyPreview = false
+            activeDisplayId = Display.DEFAULT_DISPLAY
             shellDisplayId = Display.INVALID_DISPLAY
+            handedOverTaskId = -1
+            handedOverDisplayId = Display.INVALID_DISPLAY
+            val resources = detachResourcesLocked()
+            Triple(id, resources, token)
         }
-        if (detachedId != Display.INVALID_DISPLAY) {
-            // Park first (surface = null) so the daemon stops drawing into a dead consumer;
-            // a worker keeps the main thread out of the binder call.
+        if (context != null) restoreMutedPackages(context.applicationContext, { RootAccess.isGranted })
+        else synchronized(lock) { mutedPackages.clear() }
+        val id = detached.first
+        if (id != Display.INVALID_DISPLAY) {
             thread(name = "etax-vscreen-park", isDaemon = true) {
-                runCatching { VScreenBackend.park(detachedId) }
+                runCatching { VScreenBackend.park(id) }
+                detached.second?.close()
             }
-        }
-        synchronized(lock) {
-            releaseLocked(context) { RootAccess.isGranted }
-        }
+        } else detached.second?.let { thread(name = "eta-vd-cleanup", isDaemon = true) { it.close() } }
     }
 
-    private fun releaseLocked(
+    private fun releaseSession(
         context: Context?,
         rootAvailable: () -> Boolean,
+        expected: VirtualDisplaySessionState.Token? = null,
     ) {
-        highFrequencyPreview = false
-        activeDisplayId = Display.DEFAULT_DISPLAY
-        handedOverTaskId = -1
-        handedOverDisplayId = Display.INVALID_DISPLAY
-        mutableSnapshots.value = VirtualDisplaySnapshot.Inactive
-
-        if (context != null && mutedPackages.isNotEmpty()) {
-            restoreMutedPackages(context.applicationContext, rootAvailable)
-        } else {
-            mutedPackages.clear()
+        val detached = synchronized(lock) {
+            if (expected != null && !sessionState.isCurrent(expected)) return
+            sessionState.invalidate(expected ?: sessionToken)
+            sessionToken = null
+            activeDisplayId = Display.DEFAULT_DISPLAY
+            val shellId = shellDisplayId.also { shellDisplayId = Display.INVALID_DISPLAY }
+            highFrequencyPreview = false
+            handedOverTaskId = -1
+            handedOverDisplayId = Display.INVALID_DISPLAY
+            mutableSnapshots.value = VirtualDisplaySnapshot.Inactive
+            val muted = mutedPackages.toList().also { mutedPackages.clear() }
+            Triple(shellId, detachResourcesLocked(), muted)
         }
-
-        inProcessVirtualDisplay?.let { vd ->
-            runCatching { vd.release() }
-        }
-        inProcessVirtualDisplay = null
-
-        val shellId = shellDisplayId
-        shellDisplayId = Display.INVALID_DISPLAY
-        if (shellId != Display.INVALID_DISPLAY) {
-            // Never block the caller (often Main) on a busy daemon; ordering with the reader
-            // close below is irrelevant because the display is being removed entirely.
+        if (context != null) restoreMutedPackages(context.applicationContext, rootAvailable, detached.third)
+        if (detached.first != Display.INVALID_DISPLAY) {
             thread(name = "etax-vscreen-release", isDaemon = true) {
-                runCatching { VScreenBackend.release(shellId) }
+                runCatching { VScreenBackend.release(detached.first) }
             }
         }
+        detached.second?.let { thread(name = "eta-vd-cleanup", isDaemon = true) { it.close() } }
+    }
 
-        val bridge = rootBridgeProcess
+    private fun detachResourcesLocked(): VirtualDisplaySessionResources? {
+        val reader = imageReader
+        val worker = frameThread
+        val display = inProcessVirtualDisplay
+        val bridgeProcess = rootBridgeProcess
         val supervisor = processSupervisor
+        val manager = appContextOrNull?.getSystemService(DisplayManager::class.java)
+        val listener = displayListener
+        if (listener != null) runCatching { manager?.unregisterDisplayListener(listener) }
+        imageReader = null
+        frameThread = null
+        frameHandler?.removeCallbacks(heartbeat)
+        frameHandler = null
+        inProcessVirtualDisplay = null
         rootBridgeProcess = null
         processSupervisor = null
-        if (bridge != null) {
+        displayListener = null
+        val bridge = if (bridgeProcess != null && supervisor != null) {
+            // Resources owns RootVirtualDisplayBridge, but the current legacy bridge fields are
+            // kept for compatibility; close the process on a worker after detaching state.
             thread(name = "eta-vd-bridge-cleanup", isDaemon = true) {
-                runCatching {
-                    bridge.outputStream.write("release\n".toByteArray(Charsets.UTF_8))
-                    bridge.outputStream.flush()
-                    bridge.outputStream.close()
-                }
-                if (supervisor != null) {
-                    supervisor.beginClosing()
-                    if (bridge.isAlive) supervisor.terminateAndReap(bridge) else supervisor.reapProcess(bridge)
-                    supervisor.unregisterProcess(bridge)
-                } else {
-                    runCatching { bridge.destroyForcibly() }
-                }
+                runCatching { bridgeProcess.outputStream.write("release\n".toByteArray(Charsets.UTF_8)); bridgeProcess.outputStream.flush() }
+                supervisor.beginClosing()
+                if (bridgeProcess.isAlive) supervisor.terminateAndReap(bridgeProcess) else supervisor.reapProcess(bridgeProcess)
+                supervisor.unregisterProcess(bridgeProcess)
             }
-        }
-
-        imageReader?.let { reader ->
-            runCatching { reader.setOnImageAvailableListener(null, null) }
-            runCatching { reader.close() }
-        }
-        imageReader = null
-
-        frameHandler?.removeCallbacks(heartbeat)
-        frameThread?.let { thread ->
-            runCatching { thread.quitSafely() }
-        }
-        frameThread = null
-        frameHandler = null
-
-        latestFullBitmap?.let { bmp ->
-            if (!bmp.isRecycled) bmp.recycle()
-        }
+            null
+        } else null
+        latestFullBitmap?.let { if (!it.isRecycled) it.recycle() }
         latestFullBitmap = null
         lastUiFrameAtElapsedMs = 0L
+        return VirtualDisplaySessionResources(reader, worker, display, bridge, manager, listener)
     }
 
     private fun onFrameAvailable(reader: ImageReader) {
@@ -850,6 +917,18 @@ internal object VirtualDisplayController {
         val width = image.width
         val height = image.height
         if (width <= 0 || height <= 0) return null
+        runCatching {
+            image.hardwareBuffer?.use { hardwareBuffer ->
+                val hardwareBitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, ColorSpace.get(ColorSpace.Named.SRGB))
+                if (hardwareBitmap != null) {
+                    try {
+                        return hardwareBitmap.copy(Bitmap.Config.ARGB_8888, false)
+                    } finally {
+                        if (!hardwareBitmap.isRecycled) hardwareBitmap.recycle()
+                    }
+                }
+            }
+        }
         val plane = image.planes.firstOrNull() ?: return null
         val buffer = plane.buffer ?: return null
         buffer.rewind()
@@ -860,12 +939,15 @@ internal object VirtualDisplayController {
         val paddedWidth = width + rowPadding / pixelStride
         if (paddedWidth < width) return null
 
-        val rawBitmap = Bitmap.createBitmap(paddedWidth, height, Bitmap.Config.ARGB_8888)
+        val safeHeight = if (buffer.remaining() >= paddedWidth * height * 4) height
+        else (buffer.remaining() / (paddedWidth * 4)).coerceAtMost(height)
+        if (safeHeight <= 0) return null
+        val rawBitmap = Bitmap.createBitmap(paddedWidth, safeHeight, Bitmap.Config.ARGB_8888)
         rawBitmap.copyPixelsFromBuffer(buffer)
-        return if (paddedWidth == width) {
+        return if (paddedWidth == width && safeHeight == height) {
             rawBitmap
         } else {
-            val cropped = Bitmap.createBitmap(rawBitmap, 0, 0, width, height)
+            val cropped = Bitmap.createBitmap(rawBitmap, 0, 0, width, safeHeight)
             rawBitmap.recycle()
             cropped
         }
@@ -920,7 +1002,7 @@ internal object VirtualDisplayController {
     private fun injectViaVScreen(
         displayId: Int, tapX: Int, tapY: Int, longPress: Boolean,
     ): Boolean {
-        if (!isShellDisplay(displayId)) return false
+        if (!isShellDisplay(displayId) || !isActiveDisplayValid(displayId)) return false
         VScreenBackend.touch(displayId)
         return if (longPress) {
             VScreenBackend.injectStroke(displayId, tapX, tapY, tapX, tapY, 0, 650).getOrDefault(false)
@@ -930,7 +1012,7 @@ internal object VirtualDisplayController {
     private fun injectSwipeViaVScreen(
         displayId: Int, x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Int,
     ): Boolean {
-        if (!isShellDisplay(displayId)) return false
+        if (!isShellDisplay(displayId) || !isActiveDisplayValid(displayId)) return false
         VScreenBackend.touch(displayId)
         return if (x1 == x2 && y1 == y2) {
             VScreenBackend.injectStroke(displayId, x1, y1, x2, y2, 0, durationMs).getOrDefault(false)
@@ -1135,8 +1217,9 @@ internal object VirtualDisplayController {
     private fun restoreMutedPackages(
         context: Context,
         rootAvailable: () -> Boolean,
+        packages: List<String>? = null,
     ) {
-        val toRestore = synchronized(lock) {
+        val toRestore = packages ?: synchronized(lock) {
             val copy = mutedPackages.toList()
             mutedPackages.clear()
             copy
