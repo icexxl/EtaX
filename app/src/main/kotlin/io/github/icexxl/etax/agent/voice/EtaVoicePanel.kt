@@ -53,7 +53,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import io.github.icexxl.etax.R
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -66,6 +69,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import top.yukonga.miuix.kmp.basic.Text
 import io.github.icexxl.etax.ui.components.AgentConversationMessages
 import io.github.icexxl.etax.ui.model.AgentChatMessageUi
 import kotlin.math.abs
@@ -640,6 +645,7 @@ private fun BoxScope.AssistantPanel(
             DragHandle(
                 colors = colors,
                 handoffReady = handoffReady,
+                handoffProgress = (handoffPullPx / handoffThresholdPx).coerceIn(0f, 1f),
                 modifier = Modifier.pointerInput(baseContentHeightPx, maxContentHeightPx) {
                     // 回复完成会改变接管资格；更新回调而不重启正在进行的手势。
                     detectVerticalDragGestures(
@@ -713,6 +719,7 @@ private fun BoxScope.AssistantPanel(
 private fun DragHandle(
     colors: EtaVoicePanelColors,
     handoffReady: Boolean,
+    handoffProgress: Float,
     modifier: Modifier = Modifier,
 ) {
     // 把手是接管的唯一入口：拉到阈值时变宽并染成主色，配合触觉反馈提示松手进入本体。
@@ -726,19 +733,42 @@ private fun DragHandle(
         animationSpec = tween(160),
         label = "assistant_handle_color",
     )
+    // 拉到阈值附近的微文案：告诉用户继续拉会进入本体，而不是只有触觉反馈。
+    val hintAlpha by animateFloatAsState(
+        targetValue = if (handoffProgress > 0.18f) 1f else 0f,
+        animationSpec = tween(140),
+        label = "assistant_handoff_hint_alpha",
+    )
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(38.dp)
             .testTag("eta_assistant_drag_handle"),
-        contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = if (hintAlpha > 0.05f) 8.dp else 15.dp)
                 .size(width = handleWidth, height = 4.dp)
                 .clip(CircleShape)
                 .background(handleColor),
         )
+        if (hintAlpha > 0.01f) {
+            Text(
+                text = stringResource(
+                    if (handoffReady) R.string.voice_handoff_release else R.string.voice_handoff_pull,
+                ),
+                color = if (handoffReady) MiuixTheme.colorScheme.primary else colors.inputSecondary,
+                fontSize = 11.sp,
+                lineHeight = 14.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 3.dp)
+                    .graphicsLayer { alpha = hintAlpha },
+            )
+        }
     }
 }
 

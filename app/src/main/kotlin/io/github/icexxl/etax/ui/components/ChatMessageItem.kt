@@ -56,6 +56,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -63,6 +64,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
@@ -77,6 +79,8 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -344,21 +348,42 @@ private fun UserMessageBubble(
         Color(0xFFE5E7EA)
     }
     val uiStyle = LocalUiStyle.current
+    // 点击缩略图进入全屏查看：记录每张图的真实窗口矩形，供共享边界过渡从原位展开。
+    val imagePreviewer = LocalChatImagePreviewer.current
+    val imageBounds = remember(message.id) { mutableStateMapOf<Int, Rect>() }
     val bubbleContent: @Composable () -> Unit = {
         if (message.images.isNotEmpty()) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.padding(bottom = 8.dp),
             ) {
-                message.images.forEach { dataUrl ->
+                message.images.forEachIndexed { index, dataUrl ->
                     val bitmap = rememberDataUrlBitmap(dataUrl)
                     if (bitmap != null) {
                         Image(
                             bitmap = bitmap,
-                            contentDescription = stringResource(R.string.chat_image_attachment),
+                            contentDescription = stringResource(
+                                if (imagePreviewer != null) R.string.chat_view_image
+                                else R.string.chat_image_attachment,
+                            ),
                             modifier = Modifier
                                 .size(100.dp)
-                                .clip(RoundedCornerShape(12.dp)),
+                                .clip(RoundedCornerShape(12.dp))
+                                .onGloballyPositioned { coords ->
+                                    if (coords.isAttached) imageBounds[index] = coords.boundsInWindow()
+                                }
+                                .clickable(
+                                    enabled = imagePreviewer != null &&
+                                        !(imagePreviewer?.isPresenting(message.id, index) == true),
+                                ) {
+                                    imagePreviewer?.open(
+                                        images = message.images,
+                                        initialIndex = index,
+                                        groupKey = message.id,
+                                        sourceBoundsProvider = { imageBounds[it] },
+                                        sourceCornerRadius = 12.dp,
+                                    )
+                                },
                             contentScale = ContentScale.Crop,
                         )
                     }
