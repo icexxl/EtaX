@@ -1,5 +1,8 @@
 package io.github.icexxl.etax.channel.openclaw
 
+import com.itos.coui.theme.CouiTheme
+import io.github.icexxl.etax.ui.app.LocalUiStyle
+import io.github.icexxl.etax.data.model.AppearanceUiStyle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
@@ -24,6 +27,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
+import io.github.icexxl.etax.ui.components.chatInputSurface
+import io.github.icexxl.etax.ui.components.ChatInputLayout
+import io.github.icexxl.etax.ui.components.rememberChatInputExpansion
 import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.runtime.Composable
@@ -39,7 +47,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.clearText
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.sp
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
@@ -78,15 +94,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.rounded.AttachFile
-import io.github.icexxl.etax.ui.components.AuroraBackground
-import io.github.icexxl.etax.ui.components.rememberAuroraEnabled
 import io.github.icexxl.etax.ui.markdown.MarkdownTone
 import io.github.icexxl.etax.ui.markdown.StaticMarkdown
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import io.github.icexxl.etax.ui.components.inputPulseBorder
-import io.github.icexxl.etax.ui.components.rememberInputPulseProgress
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -102,66 +114,65 @@ import androidx.compose.runtime.mutableIntStateOf
 internal fun OpenClawChatScreen(
     store: OpenClawHomeStore,
     modifier: Modifier = Modifier,
+    topInset: Dp = 0.dp,
 ) {
     val state by store.state.collectAsState()
     val context = LocalContext.current
     val uploadScope = rememberCoroutineScope()
-    var draft by remember { mutableStateOf("") }
+    // Separate drafts prevent attachments selected for A being sent to B.
+    val draft = androidx.compose.runtime.key(state.currentSessionKey) { rememberTextFieldState() }
+    var pendingAttachment by remember(state.currentSessionKey) { mutableStateOf<OpenClawPendingAttachment?>(null) }
+    var readingAttachment by remember(state.currentSessionKey) { mutableStateOf(false) }
+    var pickerSession by remember { mutableStateOf<String?>(null) }
+    val currentSession = androidx.compose.runtime.rememberUpdatedState(state.currentSessionKey)
     val listState = rememberLazyListState()
 
-    // 选文件 → 读字节 → 上传（附件以用户消息形式进入 OpenClaw）
+    // Selection only stages the file; sending waits for the send button.
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
+        val selectedSession = pickerSession ?: return@rememberLauncherForActivityResult
+        if (currentSession.value != selectedSession) return@rememberLauncherForActivityResult
+        readingAttachment = true
         uploadScope.launch {
-            val resolver = context.contentResolver
-            val mime = resolver.getType(uri) ?: "application/octet-stream"
-            var name = "file"
-            runCatching {
-                resolver.query(
-                    uri,
-                    arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
-                    null,
-                    null,
-                    null,
-                )?.use { cursor ->
-                    if (cursor.moveToFirst()) name = cursor.getString(0) ?: name
+            try {
+                val resolver = context.contentResolver
+                val mime = resolver.getType(uri) ?: "application/octet-stream"
+                var name = "file"
+                runCatching {
+                    resolver.query(
+                        uri,
+                        arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                        null,
+                        null,
+                        null,
+                    )?.use { cursor ->
+                        if (cursor.moveToFirst()) name = cursor.getString(0) ?: name
+                    }
                 }
+                val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { resolver.openInputStream(uri)?.use { it.readNBytes(64 * 1024 * 1024 + 1) } }.getOrNull()
+                }
+                if (bytes == null) {
+                    Toast.makeText(context, "读取文件失败", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                if (bytes.size > 64 * 1024 * 1024) {
+                    Toast.makeText(context, "文件超过 64MB", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                if (currentSession.value == selectedSession) {
+                    pendingAttachment = OpenClawPendingAttachment(name, mime, bytes)
+                }
+            } finally {
+                if (currentSession.value == selectedSession) readingAttachment = false
             }
-            val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching { resolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
-            }
-            if (bytes == null) {
-                Toast.makeText(context, "读取文件失败", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            if (bytes.size > 64 * 1024 * 1024) {
-                Toast.makeText(context, "文件超过 64MB", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            store.uploadFile(name, mime, bytes, draft.trim())
-            draft = ""
         }
     }
     val lastMessageId = state.messages.lastOrNull()?.id
     var previousLastMessageId by remember { mutableStateOf<String?>(null) }
 
-    // 背景光幕的"思考中"：从发送开始，到本轮第一条 agent 回复出现为止。
-    // OpenClaw 不分流式，回复是整条到达的，所以出现回复就视为开始输出结果，光幕往回收、
-    // 输入框边框恢复幻彩；不用等 running 状态结束。
-    val answerArrived = remember(state.messages) {
-        val lastUser = state.messages.indexOfLast { it.role == OpenClawMessage.Role.USER }
-        lastUser >= 0 && state.messages.drop(lastUser + 1)
-            .any { it.role == OpenClawMessage.Role.ASSISTANT && it.text.isNotBlank() }
-    }
-    val auroraThinkingNow = (state.running || state.sending) && !answerArrived
-    LaunchedEffect(auroraThinkingNow) {
-        io.github.icexxl.etax.ui.components.AuroraMood.thinking.value = auroraThinkingNow
-    }
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        onDispose { io.github.icexxl.etax.ui.components.AuroraMood.thinking.value = false }
-    }
 
     LaunchedEffect(state.currentSessionKey) {
         previousLastMessageId = null
@@ -176,25 +187,16 @@ internal fun OpenClawChatScreen(
         listState.animateScrollToItem(state.messages.lastIndex + headerItems)
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            // 顶部 inset 已由 AgentAppShell 的 contentWindowInsets 处理，这里再加会重复留白
-            .navigationBarsPadding()
-            .imePadding(),
-    ) {
-        if (state.currentSessionDeleted) {
-            NoticeLine("该会话已在 OpenClaw 中被删除，请从左侧选择其他会话")
-        }
-        state.error?.let { NoticeLine(it) }
-
+    val density = LocalDensity.current
+    var composerHeightPx by remember { mutableStateOf(0) }
+    val composerHeight = with(density) { composerHeightPx.toDp() }
+    Box(modifier = modifier.fillMaxSize().clipToBounds()) {
         LazyColumn(
             state = listState,
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .fillMaxSize(),
+            contentPadding = PaddingValues(top = topInset + 10.dp, bottom = composerHeight + 14.dp),
+            verticalArrangement = Arrangement.Top,
         ) {
             if (state.currentSessionKey == null) {
                 item {
@@ -202,6 +204,9 @@ internal fun OpenClawChatScreen(
                         text = "从左侧选择一个会话，或点 ＋ 新建",
                         fontSize = 13.sp,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 4.dp),
                     )
                 }
             }
@@ -246,166 +251,180 @@ internal fun OpenClawChatScreen(
             }
         }
 
-        val activity = when {
-            state.sending -> "发送中…"
-            state.running -> {
-                val agentName = state.agents.firstOrNull { it.id == state.currentAgentId }?.name
-                    ?.takeIf { it.isNotBlank() }
-                    ?: state.currentAgentId.ifBlank { "OpenClaw" }
-                "$agentName 回复中…"
+        Column(
+            modifier = Modifier.align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .onSizeChanged { composerHeightPx = it.height }
+                .imePadding()
+                .background(Brush.verticalGradient(listOf(Color.Transparent, MiuixTheme.colorScheme.surface)))
+                .navigationBarsPadding(),
+        ) {
+            if (state.currentSessionDeleted) {
+                NoticeLine("该会话已在 OpenClaw 中被删除，请从左侧选择其他会话")
             }
-            state.isLoadingHistory -> "正在加载历史…"
-            else -> null
-        }
-        if (activity != null) {
-            // 与主对话一致的扫光：主色高光缓慢掠过文字
-            io.github.icexxl.etax.ui.components.ShimmerText(
-                text = activity,
-                active = state.sending || state.running,
-                style = MiuixTheme.textStyles.body2.copy(fontSize = 11.sp),
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
-            )
-        }
+            state.error?.let { NoticeLine(it) }
+            val activity = when {
+                state.sending -> "发送中…"
+                state.running -> {
+                    val agentName = state.agents.firstOrNull { it.id == state.currentAgentId }?.name
+                        ?.takeIf { it.isNotBlank() }
+                        ?: state.currentAgentId.ifBlank { "OpenClaw" }
+                    "$agentName 回复中…"
+                }
+                state.isLoadingHistory -> "正在加载历史…"
+                else -> null
+            }
+            if (activity != null) {
+                // 与主对话一致的扫光：主色高光缓慢掠过文字
+                io.github.icexxl.etax.ui.components.ShimmerText(
+                    text = activity,
+                    active = state.sending || state.running,
+                    style = MiuixTheme.textStyles.body2.copy(fontSize = 11.sp),
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
+                )
+            }
 
-        // 与主对话输入框同一视觉：深色实底 + 跑马灯边框；单行时一排，多行时展开
-        val canSend = state.currentSessionKey != null && !state.sending && draft.isNotBlank()
-        var inputFocused by remember { mutableStateOf(false) }
-        val replying = state.sending || state.running
-        // 幻彩边框只在"空闲时点进输入框或有文字"时显示；发送/回复中全程不显示（和主对话一致）
-        val pulseProgress = rememberInputPulseProgress(
-            !replying && (inputFocused || draft.isNotBlank()),
-            marquee = false,
-        )
-        var lineCount by remember { mutableIntStateOf(1) }
-        val expanded = lineCount > 1
-        val enabled = state.currentSessionKey != null
-        val inputTextStyle = MiuixTheme.textStyles.body1.copy(lineHeight = 22.sp)
+            // Share the model composer surface and automatic multiline expansion.
+            val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
+            val couiDark = CouiTheme.isDark
+            val canSend = state.currentSessionKey != null && !state.sending && !readingAttachment &&
+                (draft.text.isNotBlank() || pendingAttachment != null)
+            val inputExpansion = rememberChatInputExpansion(draft)
+            val expanded = inputExpansion.expanded
+            val enabled = state.currentSessionKey != null
+            val inputTextStyle = MiuixTheme.textStyles.body1.copy(lineHeight = 22.sp)
 
-        val textArea: @Composable (Modifier) -> Unit = { areaModifier ->
-            Box(
-                modifier = areaModifier
-                    .defaultMinSize(minHeight = ChatInputActionSize)
-                    .padding(horizontal = 6.dp, vertical = 9.dp),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                if (draft.isBlank()) {
-                    Text(
-                        text = if (enabled) "发消息给 OpenClaw…" else "先选择会话",
-                        style = inputTextStyle,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        maxLines = 1,
+            val textArea: @Composable (Modifier) -> Unit = { areaModifier ->
+                Box(
+                    modifier = areaModifier
+                        .defaultMinSize(minHeight = ChatInputActionSize)
+                        .padding(horizontal = 6.dp, vertical = 9.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    if (draft.text.isBlank()) {
+                        Text(
+                            text = if (enabled) "发消息给 OpenClaw…" else "先选择会话",
+                            style = inputTextStyle,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            maxLines = 1,
+                        )
+                    }
+                    BasicTextField(
+                        state = draft,
+                        enabled = enabled && !state.sending,
+                        textStyle = inputTextStyle.copy(color = MiuixTheme.colorScheme.onSurface),
+                        cursorBrush = SolidColor(MiuixTheme.colorScheme.primary),
+                        lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 6),
+                        onTextLayout = { result -> inputExpansion.textLayout = result() },
+                        modifier = Modifier
+                            .fillMaxWidth()
                     )
                 }
-                BasicTextField(
-                    value = draft,
-                    onValueChange = { draft = it },
-                    enabled = enabled && !state.sending,
-                    textStyle = inputTextStyle.copy(color = MiuixTheme.colorScheme.onSurface),
-                    cursorBrush = SolidColor(MiuixTheme.colorScheme.primary),
-                    maxLines = 6,
-                    onTextLayout = { layout ->
-                        val lines = layout.lineCount.coerceAtLeast(1)
-                        if ((lines > 1) != (lineCount > 1)) lineCount = lines
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .onFocusChanged { inputFocused = it.isFocused },
-                )
             }
-        }
-        val attachButton: @Composable () -> Unit = {
-            IconButton(
-                onClick = { filePicker.launch(arrayOf("*/*")) },
-                enabled = state.currentSessionKey != null && !state.sending,
-                minWidth = ChatInputActionSize,
-                minHeight = ChatInputActionSize,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.AttachFile,
-                    contentDescription = "发送文件",
-                    modifier = Modifier.size(20.dp),
-                    tint = if (state.currentSessionKey != null) {
-                        MiuixTheme.colorScheme.onSurfaceVariantActions
-                    } else {
-                        MiuixTheme.colorScheme.disabledOnSurface
+            val attachButton: @Composable () -> Unit = {
+                IconButton(
+                    onClick = {
+                        pickerSession = state.currentSessionKey
+                        filePicker.launch(arrayOf("*/*"))
                     },
-                )
-            }
-        }
-        val sendButton: @Composable () -> Unit = {
-            IconButton(
-                onClick = {
-                    val text = draft.trim()
-                    if (text.isNotEmpty()) {
-                        store.send(text)
-                        draft = ""
-                    }
-                },
-                enabled = canSend,
-                minWidth = ChatInputActionSize,
-                minHeight = ChatInputActionSize,
-            ) {
-                val sendColor = when {
-                    state.sending -> MiuixTheme.colorScheme.onSurface
-                    canSend -> MiuixTheme.colorScheme.primary
-                    else -> MiuixTheme.colorScheme.surfaceContainerHigh
-                }
-                Box(
-                    modifier = Modifier
-                        .size(ChatInputActionIconSize)
-                        .clip(CircleShape)
-                        .background(sendColor),
-                    contentAlignment = Alignment.Center,
+                    enabled = state.currentSessionKey != null && !state.sending && !readingAttachment,
+                    minWidth = ChatInputActionSize,
+                    minHeight = ChatInputActionSize,
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.ArrowUpward,
-                        contentDescription = "发送",
-                        modifier = Modifier.size(16.dp),
-                        tint = when {
-                            canSend -> MiuixTheme.colorScheme.onPrimary
-                            else -> MiuixTheme.colorScheme.onSurfaceVariantActions
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = "添加附件",
+                        modifier = Modifier.size(ChatInputActionIconSize),
+                        tint = if (state.currentSessionKey != null) {
+                            MiuixTheme.colorScheme.onSurfaceVariantActions
+                        } else {
+                            MiuixTheme.colorScheme.disabledOnSurface
                         },
                     )
                 }
             }
-        }
+            val sendButton: @Composable () -> Unit = {
+                IconButton(
+                    onClick = {
+                        val text = draft.text.toString().trim()
+                        val attachment = pendingAttachment
+                        if (attachment != null) {
+                            if (store.uploadFile(attachment.name, attachment.mime, attachment.bytes, text)) {
+                                pendingAttachment = null
+                                draft.clearText()
+                            }
+                        } else if (text.isNotEmpty()) {
+                            store.send(text)
+                            draft.clearText()
+                        }
+                    },
+                    enabled = canSend,
+                    minWidth = ChatInputActionSize,
+                    minHeight = ChatInputActionSize,
+                ) {
+                    val sendColor = when {
+                        state.sending -> MiuixTheme.colorScheme.onSurface
+                        canSend -> MiuixTheme.colorScheme.primary
+                        isCoui -> if (couiDark) Color(0xFF2E3136) else Color(0xFFE1E4E9)
+                        else -> MiuixTheme.colorScheme.surfaceContainerHigh
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(if (isCoui) 32.dp else ChatInputActionIconSize)
+                            .clip(CircleShape)
+                            .background(sendColor),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ArrowUpward,
+                            contentDescription = "发送",
+                            modifier = Modifier.size(if (isCoui) 18.dp else 16.dp),
+                            tint = when {
+                                canSend -> MiuixTheme.colorScheme.onPrimary
+                                else -> MiuixTheme.colorScheme.onSurfaceVariantActions
+                            },
+                        )
+                    }
+                }
+            }
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .dropShadow(
-                    shape = RoundedCornerShape(26.dp),
-                    shadow = Shadow(radius = 8.dp, color = Color.Black, alpha = 0.08f),
-                )
-                .squircleSurface(
-                    color = Color(0xFF1E1F21),
-                    cornerRadius = 26.dp,
-                )
-                .inputPulseBorder(pulseProgress, cornerRadius = 26.dp, iridescent = true)
-                .animateContentSize(animationSpec = tween(220, easing = FastOutSlowInEasing))
-                .padding(horizontal = 6.dp, vertical = 6.dp),
-        ) {
-            if (expanded) {
-                textArea(Modifier.fillMaxWidth())
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    attachButton()
-                    Spacer(Modifier.weight(1f))
-                    sendButton()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 14.dp, start = 14.dp, end = 14.dp, bottom = 10.dp)
+                    .chatInputSurface()
+                    .animateContentSize(animationSpec = tween(220, easing = FastOutSlowInEasing))
+                    .padding(horizontal = 6.dp, vertical = 6.dp),
+            ) {
+                if (readingAttachment) {
+                    Text("正在读取附件…", modifier = Modifier.padding(12.dp), style = MiuixTheme.textStyles.body2)
                 }
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    attachButton()
-                    textArea(Modifier.weight(1f))
-                    sendButton()
+                pendingAttachment?.let { attachment ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.InsertDriveFile, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Text(
+                            attachment.name,
+                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            style = MiuixTheme.textStyles.body2,
+                        )
+                        IconButton(onClick = { pendingAttachment = null }, enabled = !state.sending) {
+                            Icon(Icons.Rounded.Close, contentDescription = "移除附件", modifier = Modifier.size(18.dp))
+                        }
+                    }
                 }
+                ChatInputLayout(
+                    expanded = expanded,
+                    expansion = inputExpansion,
+                    leading = attachButton,
+                    editor = { textArea(Modifier) },
+                    trailing = sendButton,
+                )
             }
         }
     }
@@ -581,15 +600,15 @@ private fun ChatBubble(message: OpenClawMessage, onRetry: () -> Unit) {
         ) {
             Box(
                 modifier = Modifier
-                    .widthIn(max = 320.dp)
-                    .squircleSurface(
-                        color = MiuixTheme.colorScheme.surfaceContainerHigh,
-                        topStart = 20.dp,
-                        topEnd = 20.dp,
-                        bottomEnd = 6.dp,
-                        bottomStart = 20.dp,
+                    .widthIn(max = 316.dp)
+                    .clip(OpenClawUserBubbleShape)
+                    .background(
+                        color = if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
+                            if (CouiTheme.isDark) Color(0xFF202634) else Color(0xFFEEF2FA)
+                        } else MiuixTheme.colorScheme.surfaceContainerHigh,
+                        shape = OpenClawUserBubbleShape,
                     )
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                    .padding(horizontal = 16.dp, vertical = 10.5.dp),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (!message.mediaUrl.isNullOrBlank()) MediaAttachment(message)
@@ -641,3 +660,9 @@ private fun ChatBubble(message: OpenClawMessage, onRetry: () -> Unit) {
         }
     }
 }
+
+internal data class OpenClawPendingAttachment(val name: String, val mime: String, val bytes: ByteArray)
+
+private val OpenClawUserBubbleShape = RoundedCornerShape(
+    topStart = 22.dp, topEnd = 22.dp, bottomEnd = 4.dp, bottomStart = 22.dp,
+)

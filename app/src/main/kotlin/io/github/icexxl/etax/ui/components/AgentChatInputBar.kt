@@ -55,6 +55,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.clearText
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.material.icons.Icons
@@ -324,19 +326,10 @@ internal fun AgentChatInputBar(
             )
         }
 
+
         val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
         val couiDark = CouiTheme.isDark
-        val couiInputShape = remember { CouiShape(26.dp, 2.4f) }
 
-        // 跑马灯：光标进入输入框、已有文字或正在回复时，一道彩光沿边框绕行
-        var inputFocused by remember { mutableStateOf(false) }
-        // 整圈幻彩边框（缓慢流动、不闪烁）只在"空闲时点进输入框或有文字"时显示。
-        // 刚启动、没聚焦也没文字时不显示；思考和输出回答全程（isStreaming）都不显示，
-        // 即使这时点进输入框或打了字。
-        val pulseActive = !isStreaming &&
-            (inputFocused || textFieldState.text.isNotBlank())
-        val pulseT = rememberInputPulseProgress(pulseActive, marquee = false)
-        val pulseGlow = Modifier.inputPulseBorder(pulseT, cornerRadius = 26.dp, iridescent = true)
 
         // 单行 / 多行：空或一行时是一排（+ 输入 麦克风 发送）；
         // 文字换行后卡片展开，输入区占满整行，按钮落到下方一排。
@@ -354,49 +347,7 @@ internal fun AgentChatInputBar(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(
-                        if (isCoui) {
-                            Modifier
-                                .dropShadow(
-                                    shape = couiInputShape,
-                                    shadow = Shadow(
-                                        radius = 14.dp,
-                                        color = Color.Black,
-                                        alpha = if (couiDark) 0.24f else 0.05f,
-                                    ),
-                                )
-                                .clip(couiInputShape)
-                                .background(
-                                    if (couiDark) Color(0xFF1E2024) else Color(0xFFF5F6F8),
-                                    couiInputShape,
-                                )
-                                .border(
-                                    width = 0.5.dp,
-                                    color = if (couiDark) Color(0x22FFFFFF) else Color(0x10000000),
-                                    shape = couiInputShape,
-                                )
-                        } else {
-                            Modifier
-                                .dropShadow(
-                                    shape = InputContainerShape,
-                                    shadow = Shadow(
-                                        radius = 8.dp,
-                                        color = Color.Black,
-                                        alpha = 0.08f,
-                                    ),
-                                )
-                                .squircleSurface(
-                                    color = ChatInputCardColor,
-                                    cornerRadius = 26.dp,
-                                )
-                                .squircleBorder(
-                                    width = 0.5.dp,
-                                    color = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f),
-                                    cornerRadius = 26.dp,
-                                )
-                        },
-                    )
-                    .then(pulseGlow)
+                    .chatInputSurface()
                     .animateContentSize(animationSpec = tween(220, easing = FastOutSlowInEasing))
                     .padding(horizontal = 6.dp, vertical = 6.dp),
             ) {
@@ -555,8 +506,7 @@ internal fun AgentChatInputBar(
                             state = textFieldState,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .focusRequester(focusRequester)
-                                .onFocusChanged { inputFocused = it.isFocused },
+                                .focusRequester(focusRequester),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                             textStyle = inputTextStyle.copy(color = MiuixTheme.colorScheme.onSurface),
                             cursorBrush = SolidColor(MiuixTheme.colorScheme.primary),
@@ -858,6 +808,143 @@ private fun PendingImageStrip(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Shared surface for local-model and OpenClaw composers. */
+@Composable
+internal fun Modifier.chatInputSurface(): Modifier {
+    val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
+    val couiDark = CouiTheme.isDark
+    val couiInputShape = remember { CouiShape(26.dp, 2.4f) }
+    return this.then(
+        if (isCoui) {
+            Modifier
+                .dropShadow(
+                    shape = couiInputShape,
+                    shadow = Shadow(
+                        radius = 14.dp,
+                        color = Color.Black,
+                        alpha = if (couiDark) 0.24f else 0.05f,
+                    ),
+                )
+                .clip(couiInputShape)
+                .background(
+                    if (couiDark) Color(0xFF1E2024) else Color(0xFFF5F6F8),
+                    couiInputShape,
+                )
+                .border(
+                    width = 0.5.dp,
+                    color = if (couiDark) Color(0x22FFFFFF) else Color(0x10000000),
+                    shape = couiInputShape,
+                )
+        } else {
+            Modifier
+                .dropShadow(
+                    shape = InputContainerShape,
+                    shadow = Shadow(
+                        radius = 8.dp,
+                        color = Color.Black,
+                        alpha = 0.08f,
+                    ),
+                )
+                .squircleSurface(
+                    color = ChatInputCardColor,
+                    cornerRadius = 26.dp,
+                )
+                .squircleBorder(
+                    width = 0.5.dp,
+                    color = MiuixTheme.colorScheme.outline.copy(alpha = 0.55f),
+                    cornerRadius = 26.dp,
+                )
+        },
+    )
+}
+
+/**
+ * 输入框单行/多行展开状态：文字换行后卡片展开，清空或收回到半宽以内时收回。
+ * 与主对话输入框共用同一套阈值，OpenClaw 输入框通过 [rememberChatInputExpansion] 复用。
+ */
+internal class ChatInputExpansionState internal constructor(
+    private val state: TextFieldState,
+) {
+    private var textLineCount by mutableIntStateOf(1)
+
+    val expanded: Boolean
+        get() = textLineCount > 1
+
+    var textLayout: TextLayoutResult? = null
+        set(value) {
+            field = value
+            val layout = value ?: return
+            val lines = layout.lineCount.coerceAtLeast(1)
+            if (!expanded) {
+                if (lines > 1) textLineCount = lines
+            } else {
+                val shortEnough = lines == 1 &&
+                    layout.getLineRight(0) < layout.size.width * 0.55f
+                if (state.text.isEmpty() || shortEnough) {
+                    textLineCount = 1
+                } else if (lines > 1 && lines != textLineCount) {
+                    textLineCount = lines
+                }
+            }
+        }
+}
+
+@Composable
+internal fun rememberChatInputExpansion(state: TextFieldState): ChatInputExpansionState =
+    remember(state) { ChatInputExpansionState(state) }
+
+/**
+ * 同一棵布局树里摆输入框与两侧操作：
+ * 单行 [左按钮][输入框][右按钮]；展开后输入框独占整行，按钮落到下面一排。
+ * 切换时不重建输入框，避免丢失焦点。
+ */
+@Composable
+internal fun ChatInputLayout(
+    expanded: Boolean,
+    expansion: ChatInputExpansionState,
+    leading: @Composable () -> Unit,
+    editor: @Composable (Modifier) -> Unit,
+    trailing: @Composable () -> Unit,
+) {
+    // expansion 供调用方共享展开判定；布局本身只需要最终 expanded。
+    @Suppress("UNUSED_PARAMETER")
+    val unusedExpansion = expansion
+    androidx.compose.ui.layout.Layout(
+        content = {
+            Row(verticalAlignment = Alignment.CenterVertically) { leading() }
+            editor(Modifier)
+            Row(verticalAlignment = Alignment.CenterVertically) { trailing() }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) { measurables, constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val lead = measurables[0].measure(loose)
+        val trail = measurables[2].measure(loose)
+        val full = constraints.maxWidth
+        if (!expanded) {
+            val textWidth = (full - lead.width - trail.width).coerceAtLeast(0)
+            val text = measurables[1].measure(
+                loose.copy(minWidth = textWidth, maxWidth = textWidth),
+            )
+            val height = maxOf(lead.height, text.height, trail.height)
+            layout(full, height) {
+                lead.placeRelative(0, (height - lead.height) / 2)
+                text.placeRelative(lead.width, (height - text.height) / 2)
+                trail.placeRelative(full - trail.width, (height - trail.height) / 2)
+            }
+        } else {
+            val text = measurables[1].measure(loose.copy(minWidth = full, maxWidth = full))
+            val rowHeight = maxOf(lead.height, trail.height)
+            val height = text.height + rowHeight
+            layout(full, height) {
+                text.placeRelative(0, 0)
+                lead.placeRelative(0, text.height + (rowHeight - lead.height) / 2)
+                trail.placeRelative(full - trail.width, text.height + (rowHeight - trail.height) / 2)
             }
         }
     }

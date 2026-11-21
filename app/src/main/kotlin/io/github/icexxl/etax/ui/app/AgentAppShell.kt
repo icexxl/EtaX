@@ -44,8 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.icexxl.etax.R
 import io.github.icexxl.etax.ui.components.AdaptiveTopAppBar
-import io.github.icexxl.etax.ui.components.AuroraBackground
-import io.github.icexxl.etax.ui.components.rememberAuroraEnabled
+import io.github.icexxl.etax.ui.components.ChatImagePreviewHost
 import io.github.icexxl.etax.ui.components.CharacterAvatar
 import io.github.icexxl.etax.channel.openclaw.HomeMode
 import io.github.icexxl.etax.ui.components.ConversationSidePaneScaffold
@@ -142,18 +141,20 @@ internal fun AgentAppShell(
     openClawPane: (@Composable (androidx.compose.ui.unit.Dp) -> Unit)? = null,
     homeCharacter: RoleplayChatUi? = null,
     onOpenCharacter: () -> Unit = {},
+    translucentTopBar: Boolean = false,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val uiStyle = LocalUiStyle.current
     val isHome = currentRoute is AppRoute.Home
-    val auroraEnabled = rememberAuroraEnabled()
-    val translucentHome = auroraEnabled && isHome
+    // 光幕开启时整个首页透明（内容直接铺在光幕上）；只要求顶栏透明时仍保留页面底色，
+    // 顶栏本身绘制在内容之上，透明的顶栏会把滚动到它下面的内容透出来。
+    val translucentHome = false
+    val translucentBar = translucentHome || (translucentTopBar && isHome)
     val onToggleHomeMode = {
         onHomeModeChange(if (homeMode == HomeMode.OPENCLAW) HomeMode.ETA else HomeMode.OPENCLAW)
     }
     val pageContent: @Composable () -> Unit = {
         Box(modifier = Modifier.fillMaxSize()) {
-            AuroraBackground(modifier = Modifier.matchParentSize(), enabled = auroraEnabled)
             when (uiStyle) {
                 AppearanceUiStyle.COUI -> {
                     val dark = CouiTheme.isDark
@@ -226,7 +227,7 @@ internal fun AgentAppShell(
                                     },
                                     dark = dark,
                                     colors = CouiTopAppBarDefaults.colors(
-                                        backgroundColor = if (translucentHome) Color.Transparent else MiuixTheme.colorScheme.surface,
+                                        backgroundColor = if (translucentBar) Color.Transparent else MiuixTheme.colorScheme.surface,
                                         titleColor = colors.title,
                                         dark = dark,
                                     ),
@@ -242,7 +243,7 @@ internal fun AgentAppShell(
                 AppearanceUiStyle.MIUIX -> {
                     val scrollBehavior = MiuixScrollBehavior()
                     val backdrop = rememberTopBarBackdrop()
-                    val topBarColor = if (translucentHome) Color.Transparent else topBarContainerColor(backdrop)
+                    val topBarColor = if (translucentBar) Color.Transparent else topBarContainerColor(backdrop)
                     Scaffold(
                         modifier = Modifier.fillMaxSize(),
                         containerColor = if (translucentHome) Color.Transparent else MiuixTheme.colorScheme.surface,
@@ -273,7 +274,7 @@ internal fun AgentAppShell(
                                         onToggleHomeMode = onToggleHomeMode,
                                     )
                                 }
-                                if (translucentHome) barContent() else TopBarBackdrop(backdrop) { barContent() }
+                                if (translucentBar) barContent() else TopBarBackdrop(backdrop) { barContent() }
                             }
                         },
                     ) { padding ->
@@ -291,7 +292,8 @@ internal fun AgentAppShell(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    // 全屏图片查看器宿主：包住整个页面，缩略图点击后从原位展开到全屏。
+    ChatImagePreviewHost(modifier = modifier) {
         if (conversationPaneState != null && currentRoute is AppRoute.Home) {
             ConversationSidePaneScaffold(
                 state = conversationPaneState,

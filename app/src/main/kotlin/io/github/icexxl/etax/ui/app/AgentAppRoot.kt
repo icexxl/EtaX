@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -366,7 +367,9 @@ fun AgentAppRoot(
     @Composable
     fun RoutedShell(
         route: AppRoute,
-        content: @Composable () -> Unit,
+        applyShellPadding: Boolean = true,
+        translucentTopBar: Boolean = false,
+        content: @Composable (PaddingValues) -> Unit,
     ) {
         AgentAppShell(
             currentRoute = route,
@@ -459,7 +462,12 @@ fun AgentAppRoot(
                 null
             },
             openClawHome = homeMode == io.github.icexxl.etax.channel.openclaw.HomeMode.OPENCLAW,
-            openClawMenu = { io.github.icexxl.etax.channel.openclaw.OpenClawTopBarMenu(store = openClawStore) },
+            openClawMenu = {
+                io.github.icexxl.etax.channel.openclaw.OpenClawTopBarMenu(
+                    store = openClawStore,
+                    onOpenSettings = { pushRoute(AppRoute.Settings) },
+                )
+            },
             homeTitle = if (homeMode == io.github.icexxl.etax.channel.openclaw.HomeMode.OPENCLAW) {
                 val openClawState = openClawStore.state.collectAsState().value
                 openClawState.agents.firstOrNull { it.id == openClawState.currentAgentId }?.name
@@ -470,13 +478,18 @@ fun AgentAppRoot(
             onOpenCharacter = {
                 agentState.homeState.roleplay?.let { pushRoute(AppRoute.CharacterDetail(it.characterId)) }
             },
+            translucentTopBar = translucentTopBar,
         ) { padding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-            ) {
-                content()
+            if (applyShellPadding) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                ) {
+                    content(padding)
+                }
+            } else {
+                content(padding)
             }
         }
     }
@@ -498,10 +511,15 @@ fun AgentAppRoot(
             ),
         ) {
             entry<AppRoute.Home>(swipeDismiss = swipeDismiss) {
-                RoutedShell(route = AppRoute.Home) {
+                RoutedShell(
+                    route = AppRoute.Home,
+                    applyShellPadding = homeMode != io.github.icexxl.etax.channel.openclaw.HomeMode.OPENCLAW,
+                    translucentTopBar = homeMode == io.github.icexxl.etax.channel.openclaw.HomeMode.OPENCLAW,
+                ) { shellPadding ->
                     if (homeMode == io.github.icexxl.etax.channel.openclaw.HomeMode.OPENCLAW) {
                         io.github.icexxl.etax.channel.openclaw.OpenClawChatScreen(
                             store = openClawStore,
+                            topInset = shellPadding.calculateTopPadding(),
                         )
                     } else {
                     AgentHomeScreen(
@@ -588,7 +606,7 @@ fun AgentAppRoot(
             }
             entry<AppRoute.Terminal>(swipeDismiss = swipeDismiss) {
                 LaunchedEffect(Unit) { requestExecutionNotifications() }
-                RoutedShell(route = AppRoute.Terminal) {
+                RoutedShell(route = AppRoute.Terminal) { _ ->
                     TerminalEntryScreen(
                         terminalStore = appViewModel.terminalStore,
                         consoleStore = appViewModel.consoleStore,

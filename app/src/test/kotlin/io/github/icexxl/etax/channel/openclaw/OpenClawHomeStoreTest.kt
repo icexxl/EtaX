@@ -34,6 +34,8 @@ class OpenClawHomeStoreTest {
         val sessionCalls = mutableListOf<SessionCall>()
         val agentCalls = mutableListOf<CompletableDeferred<Result<AgentsResponse>>>()
         val sendCalls = mutableListOf<CompletableDeferred<Result<InboundResponse>>>()
+        data class UploadPayload(val name: String, val text: String, val bytes: ByteArray)
+        val uploadPayloads = mutableListOf<UploadPayload>()
         val uploadCalls = mutableListOf<CompletableDeferred<Result<Unit>>>()
         override suspend fun health(config: OpenClawConfig) = Result.success(HealthResponse())
         override suspend fun agents(config: OpenClawConfig): Result<AgentsResponse> =
@@ -49,7 +51,10 @@ class OpenClawHomeStoreTest {
         override suspend fun ack(config: OpenClawConfig, seq: Long) = Result.success(AckResponse())
         override suspend fun fetchMedia(config: OpenClawConfig, src: String) = Result.success(byteArrayOf())
         override suspend fun uploadMedia(config: OpenClawConfig, name: String, mime: String, text: String, bytes: ByteArray): Result<Unit> =
-            CompletableDeferred<Result<Unit>>().also(uploadCalls::add).await()
+            CompletableDeferred<Result<Unit>>().also {
+                uploadPayloads.add(UploadPayload(name, text, bytes))
+                uploadCalls.add(it)
+            }.await()
     }
 
     @Before fun setUp() {
@@ -153,6 +158,23 @@ class OpenClawHomeStoreTest {
         assertEquals(2, api.uploadCalls.size)
         api.uploadCalls[1].complete(Result.success(Unit))
         assertFalse(store.state.value.messages.last().failed)
+    }
+
+    @Test fun `attachment and caption submit together and rejected submissions keep draft ownership`() {
+        assertFalse(store.uploadFile("note.txt", "text/plain", byteArrayOf(1), "caption"))
+        store.selectAgent("a")
+        store.newSession()
+        assertTrue(store.uploadFile("note.txt", "text/plain", byteArrayOf(1, 2), "分析这个附件"))
+        assertEquals("分析这个附件", api.uploadPayloads.single().text)
+        assertEquals("note.txt", api.uploadPayloads.single().name)
+        assertEquals("分析这个附件", store.state.value.messages.single().text)
+        assertTrue(api.sendCalls.isEmpty())
+        assertFalse(store.uploadFile("other.txt", "text/plain", byteArrayOf(3)))
+        assertEquals(1, api.uploadCalls.size)
+        api.uploadCalls.single().complete(Result.failure(IllegalStateException("offline")))
+        store.retryMessage(store.state.value.messages.single().id)
+        assertEquals("分析这个附件", api.uploadPayloads.last().text)
+        assertTrue(api.uploadPayloads.last().bytes.contentEquals(byteArrayOf(1, 2)))
     }
 
     private fun session(agentId: String, key: String = "agent:$agentId:eta:direct:one") =

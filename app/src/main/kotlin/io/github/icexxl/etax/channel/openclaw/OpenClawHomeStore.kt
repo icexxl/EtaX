@@ -519,14 +519,14 @@ internal class OpenClawHomeStore(
     }
 
     /** 上传附件给当前会话对应的 OpenClaw 会话。 */
-    fun uploadFile(name: String, mime: String, bytes: ByteArray, caption: String = "") {
-        val sessionKey = _state.value.currentSessionKey ?: return
+    fun uploadFile(name: String, mime: String, bytes: ByteArray, caption: String = ""): Boolean {
+        val sessionKey = _state.value.currentSessionKey ?: return false
         val config = config()
         if (!config.isConfigured) {
             _state.value = _state.value.copy(error = "请先在设置里填写 Gateway 地址与 Token")
-            return
+            return false
         }
-        if (scope == null || _state.value.sending) return
+        if (scope == null || _state.value.sending) return false
         val localId = "local-up-" + UUID.randomUUID()
         appendMessages(
             listOf(
@@ -542,6 +542,7 @@ internal class OpenClawHomeStore(
             ),
         )
         uploadOptimistic(sessionKey, localId, name, mime, bytes, caption, config)
+        return true
     }
 
     private fun uploadOptimistic(
