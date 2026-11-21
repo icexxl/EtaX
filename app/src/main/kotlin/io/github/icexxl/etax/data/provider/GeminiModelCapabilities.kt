@@ -13,6 +13,7 @@ internal object GeminiModelCapabilities {
     private val lowToHigh = listOf(ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH)
     private val minimalToHigh = listOf(ReasoningEffort.MINIMAL) + lowToHigh
     private val knownModels = mapOf(
+        "gemini-4-carbon" to capabilities(lowToHigh, ReasoningEffort.MEDIUM, hostedSearch = true),
         "gemini-4-argon" to capabilities(lowToHigh, ReasoningEffort.MEDIUM, hostedSearch = true),
         "gemini-3.8-flash" to capabilities(lowToHigh, ReasoningEffort.MEDIUM, hostedSearch = true),
         "gemini-3.6-flash" to capabilities(minimalToHigh, ReasoningEffort.MEDIUM, hostedSearch = true),

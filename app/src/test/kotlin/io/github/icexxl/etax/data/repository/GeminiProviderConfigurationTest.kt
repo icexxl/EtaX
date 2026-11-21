@@ -107,7 +107,7 @@ class GeminiProviderConfigurationTest {
         assertEquals(BuiltinProviders.GEMINI_ID, providers.last().id)
         assertEquals(source.id, SettingsDataStore.settings().selectedProviderId)
         assertEquals(source.models.single().id, SettingsDataStore.settings().selectedModelId)
-        assertEquals(3, providers.last().models.size)
+        assertEquals(4, providers.last().models.size)
     }
 
     @Test

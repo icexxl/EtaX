@@ -28,7 +28,7 @@ class GeminiModelCapabilitiesTest {
         assertTrue(provider is GeminiProviderSetting)
         assertFalse(provider.hostedWebSearchEnabled)
         val presets = OfficialModelCatalog.modelsForProvider(provider)
-        assertEquals(listOf("gemini-3.8-flash", "gemini-4-argon", "gemini-3.5-flash-lite"), presets.map { it.modelId })
+        assertEquals(listOf("gemini-4-carbon", "gemini-3.8-flash", "gemini-4-argon", "gemini-3.5-flash-lite"), presets.map { it.modelId })
         for (model in presets) {
             assertEquals(1_048_576, model.effectiveContextWindow)
             assertTrue(model.supportsVision && model.supportsTools)
@@ -47,7 +47,7 @@ class GeminiModelCapabilitiesTest {
     @Test
     fun searchCapabilitiesRequireConfirmedModelIdentity() {
         for (id in listOf(
-            "gemini-4-argon", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite",
+            "gemini-4-carbon", "gemini-4-argon", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite",
             "gemini-3.1-pro-preview", "gemini-3-flash-preview", "gemini-3-pro-preview",
         )) {
             assertTrue(GeminiModelCapabilities.supportsHostedSearch(" models/$id "))
