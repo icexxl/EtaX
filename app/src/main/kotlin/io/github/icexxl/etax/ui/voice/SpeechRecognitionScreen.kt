@@ -79,6 +79,7 @@ internal fun SpeechRecognitionScreen(onBack: () -> Unit, onOpenOss: () -> Unit) 
                                 AsrProvider.QWEN_REALTIME, AsrProvider.DOUBAO -> R.string.speech_asr_note_streaming
                                 AsrProvider.QWEN_FLASH -> R.string.speech_asr_note_flash
                                 AsrProvider.QWEN_FILE -> R.string.speech_asr_note_file
+                                AsrProvider.MIMO -> R.string.speech_asr_note_mimo
                             },
                         ),
                     )
@@ -152,6 +153,7 @@ internal fun SpeechRecognitionScreen(onBack: () -> Unit, onOpenOss: () -> Unit) 
                                         AsrProvider.QWEN_REALTIME, AsrProvider.DOUBAO -> R.string.speech_asr_note_streaming
                                         AsrProvider.QWEN_FLASH -> R.string.speech_asr_note_flash
                                         AsrProvider.QWEN_FILE -> R.string.speech_asr_note_file
+                                        AsrProvider.MIMO -> R.string.speech_asr_note_mimo
                                     },
                                 ),
                             )

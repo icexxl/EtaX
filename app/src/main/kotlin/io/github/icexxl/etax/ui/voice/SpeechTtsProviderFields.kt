@@ -103,7 +103,19 @@ internal fun MiniMaxConnectionSection(store: SpeechSettingsStore) {
 }
 
 @Composable
-private fun SpeechApiKeyConnectionSection(
+internal fun MimoTtsConnectionSection(store: SpeechSettingsStore) {
+    val config = store.settings.mimoTts
+    SpeechApiKeyConnectionSection(
+        baseUrl = config.baseUrl,
+        apiKey = store.credentials.mimoTts,
+        onBaseUrl = { store.edit(store.settings.copy(mimoTts = config.copy(baseUrl = it))) },
+        onApiKey = { store.credential(SpeechCredentialField.MIMO_TTS, it) },
+        note = stringResource(R.string.speech_mimo_tts_connection_note),
+    ) {}
+}
+
+@Composable
+internal fun SpeechApiKeyConnectionSection(
     baseUrl: String,
     apiKey: String,
     onBaseUrl: (String) -> Unit,
@@ -126,14 +138,20 @@ private fun SpeechApiKeyConnectionSection(
 @Composable
 internal fun SpeechDeliveryFields(store: SpeechSettingsStore) {
     when (store.settings.tts) {
-        TtsProvider.GEMINI -> {
-            val config = store.settings.geminiTts
+        TtsProvider.GEMINI, TtsProvider.MIMO -> {
+            val mimo = store.settings.tts == TtsProvider.MIMO
+            val style = if (mimo) store.settings.mimoTts.style else store.settings.geminiTts.style
             SpeechFieldColumn {
                 SpeechField(
-                    label = stringResource(R.string.speech_gemini_style),
-                    value = config.style,
+                    label = stringResource(if (mimo) R.string.speech_style else R.string.speech_gemini_style),
+                    value = style,
                     singleLine = false,
-                    onChange = { store.edit(store.settings.copy(geminiTts = config.copy(style = it))) },
+                    onChange = {
+                        store.edit(
+                            if (mimo) store.settings.copy(mimoTts = store.settings.mimoTts.copy(style = it))
+                            else store.settings.copy(geminiTts = store.settings.geminiTts.copy(style = it)),
+                        )
+                    },
                 )
             }
         }

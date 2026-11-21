@@ -17,6 +17,10 @@ import org.json.JSONObject
 internal suspend fun recognizeSpeechFile(context: Context, settings: SpeechSettings, credentials: SpeechCredentials,
     wav: ByteArray, onProgress: (String) -> Unit): String = withContext(Dispatchers.IO) {
     withTimeout(300_000) {
+        if (settings.asr == AsrProvider.MIMO) {
+            onProgress("正在识别")
+            return@withTimeout recognizeMimoSpeech(settings.mimoAsr, credentials.mimoAsr, wav)
+        }
         val base = speechBaseUrl(settings.qwenAsr.endpoint())
         if (settings.asr == AsrProvider.QWEN_FLASH) {
             onProgress("正在识别")

@@ -21,6 +21,7 @@ import io.github.icexxl.etax.R
 import io.github.icexxl.etax.data.model.AppearanceUiStyle
 import io.github.icexxl.etax.data.model.AsrProvider
 import io.github.icexxl.etax.data.model.DoubaoSpeechConfig
+import io.github.icexxl.etax.data.model.MimoAsrLanguage
 import io.github.icexxl.etax.data.model.QwenSpeechConfig
 import io.github.icexxl.etax.data.model.SpeechCredentialField
 import io.github.icexxl.etax.data.model.SpeechRegion
@@ -39,7 +40,10 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 internal fun SpeechConnectionSection(store: SpeechSettingsStore, synthesis: Boolean) {
     if (!synthesis) {
-        QwenDoubaoConnectionSection(store, synthesis = false)
+        when (store.settings.asr) {
+            AsrProvider.MIMO -> MimoAsrConnectionSection(store)
+            else -> QwenDoubaoConnectionSection(store, synthesis = false)
+        }
         return
     }
     when (store.settings.tts) {
@@ -47,6 +51,7 @@ internal fun SpeechConnectionSection(store: SpeechSettingsStore, synthesis: Bool
         TtsProvider.QWEN, TtsProvider.DOUBAO -> QwenDoubaoConnectionSection(store, synthesis = true)
         TtsProvider.GEMINI -> GeminiConnectionSection(store)
         TtsProvider.MINIMAX -> MiniMaxConnectionSection(store)
+        TtsProvider.MIMO -> MimoTtsConnectionSection(store)
     }
 }
 
@@ -244,6 +249,53 @@ private fun QwenDoubaoConnectionSection(store: SpeechSettingsStore, synthesis: B
                     },
                 ),
             )
+        }
+    }
+}
+
+@Composable
+internal fun MimoAsrConnectionSection(store: SpeechSettingsStore) {
+    val config = store.settings.mimoAsr
+    val languages = MimoAsrLanguage.entries
+    val items = languages.map { language ->
+        stringResource(
+            when (language) {
+                MimoAsrLanguage.AUTO -> R.string.speech_language_auto
+                MimoAsrLanguage.CHINESE -> R.string.speech_language_chinese
+                MimoAsrLanguage.ENGLISH -> R.string.speech_language_english
+            },
+        )
+    }
+    val onLanguageChange: (Int) -> Unit = { index ->
+        languages.getOrNull(index)?.let {
+            store.edit(store.settings.copy(mimoAsr = config.copy(language = it)))
+        }
+    }
+    SpeechApiKeyConnectionSection(
+        baseUrl = config.baseUrl,
+        apiKey = store.credentials.mimoAsr,
+        onBaseUrl = { store.edit(store.settings.copy(mimoAsr = config.copy(baseUrl = it))) },
+        onApiKey = { store.credential(SpeechCredentialField.MIMO_ASR, it) },
+        note = stringResource(R.string.speech_mimo_asr_connection_note),
+    ) {
+        when (LocalUiStyle.current) {
+            AppearanceUiStyle.COUI -> {
+                CouiDropdownPreference(
+                    title = stringResource(R.string.speech_recognition_language),
+                    items = items,
+                    selectedIndex = config.language.ordinal,
+                    onSelectedIndexChange = onLanguageChange,
+                )
+                Divider()
+            }
+            AppearanceUiStyle.MIUIX -> {
+                OverlayDropdownPreference(
+                    title = stringResource(R.string.speech_recognition_language),
+                    items = items,
+                    selectedIndex = config.language.ordinal,
+                    onSelectedIndexChange = onLanguageChange,
+                )
+            }
         }
     }
 }
