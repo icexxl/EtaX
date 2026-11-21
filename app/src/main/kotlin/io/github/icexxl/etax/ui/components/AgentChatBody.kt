@@ -252,21 +252,6 @@ internal fun AgentChatBody(
             last is AgentMessageUi && last.content.isNotBlank()
         }
     }
-    // Once an answer starts, terminal message flags/tool-row updates cannot restart the glow.
-    val auroraTurnKey = messages.lastOrNull { it is UserMessageUi }?.id
-    var answerSeen by remember(auroraTurnKey) { mutableStateOf(false) }
-    LaunchedEffect(isStreaming, answerStarted) {
-        if (!isStreaming) answerSeen = false
-        else if (answerStarted) answerSeen = true
-    }
-    val auroraThinking = isStreaming && !answerStarted && !answerSeen
-    LaunchedEffect(auroraThinking) {
-        AuroraMood.thinking.value = auroraThinking
-    }
-    DisposableEffect(Unit) {
-        onDispose { AuroraMood.thinking.value = false }
-    }
-
     LaunchedEffect(isStreaming) {
         if (isStreaming && sentFromKeyboard) {
             keyboard?.hide()
@@ -409,9 +394,7 @@ private fun AgentChatScaffold(
     modifier: Modifier = Modifier,
 ) {
     val surfaceColor = MiuixTheme.colorScheme.surface
-    // 动态背景开启时不再用磨砂层：它的底色不透明，会在输入框上方形成一条黑带
-    val auroraEnabled = rememberAuroraEnabled()
-    val frostEnabled = hasMessages && !auroraEnabled && LocalBlurEnabled.current &&
+    val frostEnabled = hasMessages && LocalBlurEnabled.current &&
         isRuntimeShaderSupported()
     val messageBackdrop = rememberLayerBackdrop {
         // Backdrop 必须包含不透明底色，否则文字边缘模糊到透明区域时会出现黑边。

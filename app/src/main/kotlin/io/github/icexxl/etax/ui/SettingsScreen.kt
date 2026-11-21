@@ -490,17 +490,6 @@ private fun SettingsPageContent(
                 }
 
                 Group {
-                    SwitchPref(
-                        context = context,
-                        prefs = agentPrefs,
-                        title = "动态背景",
-                        summary = "对话页缓慢流动的渐变色，关闭后为纯色背景",
-                        key = Prefs.Keys.CHAT_AURORA_BACKGROUND,
-                        icon = Icons.Rounded.Gradient,
-                        iconTint = SettingsIconColors.Blue,
-                    )
-                }
-                Group {
                     CouiPreference(
                         title = "OpenClaw 渠道",
                         summary = "与 OpenClaw agent 对话",
@@ -934,20 +923,6 @@ private fun SettingsPageContent(
                                 )
                             },
                             onClick = { onNavigate(AppRoute.LinuxEnvironment) },
-                        )
-                    }
-                }
-
-                item(key = "aurora_background") {
-                    SettingsGroupCard {
-                        SwitchPref(
-                            context = context,
-                            prefs = agentPrefs,
-                            title = "动态背景",
-                            summary = "对话页缓慢流动的渐变色，关闭后为纯色背景",
-                            key = Prefs.Keys.CHAT_AURORA_BACKGROUND,
-                            icon = Icons.Rounded.Gradient,
-                            iconTint = SettingsIconColors.Blue,
                         )
                     }
                 }
