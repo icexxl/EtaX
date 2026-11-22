@@ -25,6 +25,8 @@ import io.github.icexxl.etax.agent.device.BoundedRootCommandExecutor
 import io.github.icexxl.etax.agent.device.DeviceToolContract
 import io.github.icexxl.etax.agent.device.RootAccess
 import io.github.icexxl.etax.agent.terminal.ShellProcessSupervisor
+import io.github.icexxl.etax.channel.vscreen.VScreenBackend
+import io.github.icexxl.etax.channel.vscreen.VScreenPolicy
 import io.github.icexxl.etax.core.AndroidAgentLogger
 import io.github.icexxl.etax.core.safeLogType
 import java.util.concurrent.TimeUnit
@@ -60,6 +62,11 @@ internal object VirtualDisplayController {
     private var highFrequencyPreview: Boolean = false
 
     private var displayResources: VirtualDisplaySessionResources? = null
+    /** 由 Shizuku 后台显示服务（shell uid）拥有的副屏 id；与 App 自建屏互斥。 */
+    @Volatile
+    private var shellDisplayId: Int = Display.INVALID_DISPLAY
+    @Volatile
+    private var appContextOrNull: Context? = null
     private var latestFullBitmap: Bitmap? = null
     private var lastUiFrameAtElapsedMs: Long = 0L
     private val mutedPackages = linkedSetOf<String>()
@@ -92,13 +99,17 @@ internal object VirtualDisplayController {
         rootAvailable: () -> Boolean = { RootAccess.isGranted },
     ): Int? {
         val appContext = context.applicationContext
+        appContextOrNull = appContext
         val manager = appContext.getSystemService(DisplayManager::class.java) ?: return null
         // 创建可包含 Binder 与 Root 等待；发布状态和释放不等待这把创建锁。
         synchronized(creationLock) {
             val existing = synchronized(lock) { sessionState.active }
             if (existing != null) {
                 val bridge = synchronized(lock) { displayResources?.bridge }
-                if ((bridge == null || bridge.isAlive) && isDisplayUsable(manager, existing.displayId)) {
+                if ((bridge == null || bridge.isAlive) &&
+                    shellDisplayAlive(appContext, existing.displayId) &&
+                    isDisplayUsable(manager, existing.displayId)
+                ) {
                     synchronized(lock) {
                         if (sessionState.isCurrent(existing.token)) return existing.displayId
                     }
@@ -119,6 +130,77 @@ internal object VirtualDisplayController {
                 reader = frames
                 val handler = Handler(frameWorker.looper)
                 frames.setOnImageAvailableListener(::onFrameAvailable, handler)
+                // 进屏前刷新一次授权状态，避免启动时的旧快照把可用通道判成不可用。
+                runCatching { VScreenBackend.refresh() }
+                val daemonReady = VScreenBackend.isReady()
+                AndroidAgentLogger.info(
+                    "Virtual display backend probe: shizuku=${if (daemonReady) "ready" else "unavailable"} " +
+                        "rootAllowed=${rootAvailable()}",
+                )
+                if (daemonReady) {
+                    // Shizuku 通道优先：副屏必须由 shell uid 拥有，App 自建屏无法承载跨应用任务。
+                    val attached = attachDaemonSession(
+                        appContext, handler, width, height, densityDpi, frames, token,
+                    )
+                    if (attached == null) {
+                        // 服务拒绝：继续尝试其它后端，但不把任务丢回物理主屏。
+                        AndroidAgentLogger.warn("Shizuku daemon attach rejected; falling back to in-process display")
+                    } else {
+                        val (daemonId, activeReader) = attached
+                        val usable = isDisplayUsable(manager, daemonId)
+                        if (usable) {
+                            val daemonListener = object : DisplayManager.DisplayListener {
+                                override fun onDisplayAdded(displayId: Int) = Unit
+                                override fun onDisplayChanged(displayId: Int) {
+                                    if (displayId == daemonId && !isDisplayUsable(manager, daemonId)) {
+                                        releaseSession(appContext, rootAvailable, token)
+                                    }
+                                }
+
+                                override fun onDisplayRemoved(displayId: Int) {
+                                    if (displayId == daemonId) releaseSession(appContext, rootAvailable, token)
+                                }
+                            }
+                            manager.registerDisplayListener(daemonListener, handler)
+                            val packageName = VScreenBackend.listTasks(daemonId).getOrNull()
+                                ?.firstOrNull { it.visible }?.pkg.orEmpty()
+                            synchronized(lock) {
+                                if (sessionState.activate(token, daemonId)) {
+                                    displayResources = VirtualDisplaySessionResources(
+                                        activeReader, frameWorker, null, null, manager, daemonListener,
+                                    )
+                                    mutableSnapshots.value = VirtualDisplaySnapshot(
+                                        active = true,
+                                        displayId = daemonId,
+                                        width = activeReader.width,
+                                        height = activeReader.height,
+                                        packageName = packageName,
+                                    )
+                                    accepted = true
+                                }
+                            }
+                            if (accepted) {
+                                AndroidAgentLogger.info(
+                                    "Virtual display ready (shizuku daemon): displayId=$daemonId " +
+                                        "size=${activeReader.width}x${activeReader.height}",
+                                )
+                                return daemonId
+                            }
+                            runCatching { manager.unregisterDisplayListener(daemonListener) }
+                        } else {
+                            AndroidAgentLogger.warn(
+                                "Virtual display rejected: displayId=$daemonId reason=DAEMON_DISPLAY_NOT_USABLE",
+                            )
+                        }
+                        // 失败时把副屏交还服务端，并让 finally 回收正确的取景器，避免泄漏。
+                        reader = activeReader
+                        synchronized(lock) { shellDisplayId = Display.INVALID_DISPLAY }
+                        thread(name = "etax-vscreen-release-rejected", isDaemon = true) {
+                            runCatching { VScreenBackend.release(daemonId) }
+                        }
+                        return null
+                    }
+                }
                 if (rootAvailable()) {
                     rootBridge = RootVirtualDisplayBridge.create(
                         appContext, frames.surface, width, height, densityDpi, rootAvailable,
@@ -190,13 +272,170 @@ internal object VirtualDisplayController {
 
     private fun isDisplayUsable(manager: DisplayManager, displayId: Int): Boolean = try {
         val display = manager.getDisplay(displayId)
-        display != null && display.isValid && CanvasRoutingPolicy.hasRequiredDisplayFlags(display.flags)
+        if (display == null || !display.isValid) {
+            false
+        } else if (shellDisplayId == displayId) {
+            // shell 副屏是否具备后台焦点能力，以服务端上报的"创建标志"为准；
+            // Display.getFlags() 的位定义与之不同，不能混用。
+            VScreenBackend.list().getOrNull()
+                ?.firstOrNull { it.displayId == displayId }
+                ?.let { VScreenPolicy.supportsBackgroundFocus(it.flags) } == true
+        } else {
+            CanvasRoutingPolicy.hasRequiredDisplayFlags(display.flags)
+        }
     } catch (exception: Exception) {
         AndroidAgentLogger.warnThrottled("virtual_display_validation_failed") {
             "Virtual display validation failed: type=${exception.safeLogType()}"
         }
         false
     }
+
+    /** 该副屏是否由 Shizuku 后台服务（shell uid）拥有，而不是 App 自建。 */
+    fun isShellDisplay(displayId: Int): Boolean = synchronized(lock) {
+        shellDisplayId != Display.INVALID_DISPLAY && shellDisplayId == displayId
+    }
+
+    /**
+     * 后台副屏是否仍然存活。
+     *
+     * 非 shell 屏恒为 true：它的存活由 DisplayManager 自己判定。
+     * shell 屏必须回到服务端清点一次，避免服务被重启或超时回收后仍当作可用。
+     */
+    private fun shellDisplayAlive(context: Context, displayId: Int): Boolean =
+        shellDisplayId != displayId ||
+            (VScreenBackend.isReady() &&
+                VScreenBackend.list().getOrNull()?.any { it.displayId == displayId } == true)
+
+    private fun isActiveDisplayValid(displayId: Int): Boolean {
+        val active = synchronized(lock) {
+            sessionState.active?.displayId == displayId && mutableSnapshots.value.active
+        }
+        if (!active || !CanvasRoutingPolicy.isVirtualDisplay(displayId)) return false
+        val context = appContextOrNull ?: return false
+        val manager = context.getSystemService(DisplayManager::class.java) ?: return false
+        val usable = isDisplayUsable(manager, displayId) && shellDisplayAlive(context, displayId)
+        if (!usable) {
+            val token = synchronized(lock) {
+                sessionState.active?.token?.takeIf { sessionState.active?.displayId == displayId }
+            }
+            if (token != null) releaseSession(context, { RootAccess.isGranted }, token)
+        }
+        return usable
+    }
+
+    /**
+     * 接管或新建 Shizuku 后台副屏。
+     *
+     * 已有同名副屏时优先复用（设置新 surface 并按其尺寸调整取景器），否则让服务新建一块。
+     * 服务拒绝时返回 null，且绝不因此静默改用其它后端或把任务丢回物理主屏。
+     */
+    private fun attachDaemonSession(
+        appContext: Context,
+        handler: Handler,
+        width: Int,
+        height: Int,
+        densityDpi: Int,
+        readerAtEntry: ImageReader,
+        token: VirtualDisplaySessionState.Token,
+    ): Pair<Int, ImageReader>? {
+        val remoteDisplays = VScreenBackend.list().getOrNull() ?: return null
+        val existing = VScreenPolicy.pickAdoptable(remoteDisplays, CanvasRoutingPolicy.VIRTUAL_DISPLAY_NAME)
+        var activeReader = readerAtEntry
+        val daemonId = if (existing != null) {
+            val needsResize = existing.width != width || existing.height != height
+            val target = if (needsResize) {
+                val resized = runCatching {
+                    ImageReader.newInstance(existing.width, existing.height, PixelFormat.RGBA_8888, 3)
+                }.getOrNull() ?: return null
+                resized.setOnImageAvailableListener(::onFrameAvailable, handler)
+                resized
+            } else {
+                readerAtEntry
+            }
+            VScreenBackend.setSurface(existing.displayId, target.surface).getOrNull()?.let {
+                if (needsResize) {
+                    readerAtEntry.close()
+                    activeReader = target
+                }
+                existing.displayId
+            } ?: run {
+                if (needsResize) target.close()
+                null
+            }
+        } else {
+            val created = VScreenBackend.create(
+                CanvasRoutingPolicy.VIRTUAL_DISPLAY_NAME, width, height, densityDpi, readerAtEntry.surface,
+            )
+            created.exceptionOrNull()?.let {
+                AndroidAgentLogger.warn("Shizuku create failed: ${it.javaClass.simpleName}: ${it.message}")
+            }
+            created.getOrNull()?.displayId
+        }
+        if (daemonId == null || !CanvasRoutingPolicy.isVirtualDisplay(daemonId)) {
+            // 服务拒绝时不得静默切换到其它后端，也不得把任务迁回物理主屏。
+            return null
+        }
+        val committed = synchronized(lock) {
+            if (!sessionState.isCurrent(token)) false else {
+                shellDisplayId = daemonId
+                true
+            }
+        }
+        if (!committed) {
+            // 会话在接管过程中被释放：不要把可能属于上一代生命周期的副屏强行销毁，
+            // 交回服务端的 TTL 回收即可。
+            thread(name = "etax-vscreen-park-stale", isDaemon = true) {
+                runCatching { VScreenBackend.park(daemonId) }
+            }
+            return null
+        }
+        return daemonId to activeReader
+    }
+
+    /** 通过 Shizuku 服务注入按键；绝不把虚拟屏的按键导向物理主屏。 */
+    fun injectShellKey(displayId: Int, keyCode: Int): Boolean {
+        if (!isShellDisplay(displayId) || !isActiveDisplayValid(displayId)) return false
+        VScreenBackend.touch(displayId)
+        return VScreenBackend.injectKey(displayId, keyCode, false).getOrDefault(false)
+    }
+
+    private fun injectViaVScreen(
+        displayId: Int,
+        tapX: Int,
+        tapY: Int,
+        longPress: Boolean,
+    ): Boolean {
+        if (!isShellDisplay(displayId) || !isActiveDisplayValid(displayId)) return false
+        VScreenBackend.touch(displayId)
+        return if (longPress) {
+            VScreenBackend.injectStroke(displayId, tapX, tapY, tapX, tapY, 0, 650).getOrDefault(false)
+        } else {
+            VScreenBackend.injectTap(displayId, tapX, tapY).getOrDefault(false)
+        }
+    }
+
+    private fun injectSwipeViaVScreen(
+        displayId: Int,
+        x1: Int,
+        y1: Int,
+        x2: Int,
+        y2: Int,
+        durationMs: Int,
+    ): Boolean {
+        if (!isShellDisplay(displayId) || !isActiveDisplayValid(displayId)) return false
+        VScreenBackend.touch(displayId)
+        return if (x1 == x2 && y1 == y2) {
+            VScreenBackend.injectStroke(displayId, x1, y1, x2, y2, 0, durationMs).getOrDefault(false)
+        } else {
+            VScreenBackend.injectStroke(displayId, x1, y1, x2, y2, durationMs).getOrDefault(false)
+        }
+    }
+
+    fun injectBackendTap(displayId: Int, x: Int, y: Int): Boolean =
+        isActiveDisplayValid(displayId) && injectViaVScreen(displayId, x, y, false)
+
+    fun injectBackendSwipe(displayId: Int, x1: Int, y1: Int, x2: Int, y2: Int, duration: Int): Boolean =
+        isActiveDisplayValid(displayId) && injectSwipeViaVScreen(displayId, x1, y1, x2, y2, duration)
 
     /**
      * 在虚拟屏上启动指定应用，并对其施加后台音频焦点静默保护。
@@ -452,6 +691,11 @@ internal object VirtualDisplayController {
         val y = (normalizedY.coerceIn(0f, 1f) * (snapshot.height - 1)).roundToInt()
         emitTapEffect(x, y, longPress = longPress)
         thread(name = "eta-vd-user-tap", isDaemon = true) {
+            // shell 拥有的副屏不受本应用无障碍服务管辖，必须经 Shizuku 服务注入。
+            if (isShellDisplay(snapshot.displayId)) {
+                injectViaVScreen(snapshot.displayId, x, y, longPress)
+                return@thread
+            }
             val duration = if (longPress) 650L else 55L
             val dispatched = AgentAccessibilityService.current()
                 ?.gestureTap(x.toFloat(), y.toFloat(), durationMs = duration, displayId = snapshot.displayId)
@@ -489,6 +733,10 @@ internal object VirtualDisplayController {
         val safeDuration = durationMs.coerceIn(140, 1_000)
         emitSwipeEffect(x1, y1, x2, y2, safeDuration)
         thread(name = "eta-vd-user-swipe", isDaemon = true) {
+            if (isShellDisplay(snapshot.displayId)) {
+                injectSwipeViaVScreen(snapshot.displayId, x1, y1, x2, y2, safeDuration)
+                return@thread
+            }
             val dispatched = AgentAccessibilityService.current()
                 ?.gestureSwipe(
                     x1.toFloat(),
@@ -526,6 +774,13 @@ internal object VirtualDisplayController {
             if (expected != null && !sessionState.isCurrent(expected)) return
             sessionState.invalidate()
             highFrequencyPreview = false
+            // 后台副屏归 shell uid 所有，必须显式交还服务端，否则会一直留在系统里。
+            val shellId = shellDisplayId.also { shellDisplayId = Display.INVALID_DISPLAY }
+            if (shellId != Display.INVALID_DISPLAY) {
+                thread(name = "etax-vscreen-release", isDaemon = true) {
+                    runCatching { VScreenBackend.release(shellId) }
+                }
+            }
             mutableSnapshots.value = VirtualDisplaySnapshot.Inactive
             if (context != null && mutedPackages.isNotEmpty()) {
                 restoreMutedPackages(context.applicationContext, rootAvailable)

@@ -20,6 +20,7 @@ import android.view.MotionEvent
 import android.view.Surface
 import io.github.icexxl.etax.BuildConfig
 import io.github.icexxl.etax.agent.virtualdisplay.CanvasRoutingPolicy
+import io.github.icexxl.etax.core.AndroidAgentLogger
 
 private fun tr(zh: String, en: String): String =
     if (java.util.Locale.getDefault().language.startsWith("zh")) zh else en
@@ -586,9 +587,14 @@ class VScreenDisplayService : Binder {
                 }
                 val vd = dm.createVirtualDisplay(name, w, h, dpi, surface, f)
                     ?: throw IllegalStateException("createVirtualDisplay returned null")
+                // IME 隔离是增强项，不是副屏能否存在的前提：
+                // 部分 ROM（如 Android 17 上的 ColorOS）不允许改写 WMS 显示策略，
+                // 此时保留副屏并告警，否则整个功能在该机型上不可用。
                 if (!applyImePolicyHide(vd.display.displayId)) {
-                    vd.release()
-                    throw IllegalStateException("Virtual display IME isolation is unavailable")
+                    AndroidAgentLogger.warn(
+                        "Virtual display IME isolation unavailable: displayId=${vd.display.displayId}; " +
+                            "keeping display without IME hide",
+                    )
                 }
                 lastFlags = f
                 return vd
