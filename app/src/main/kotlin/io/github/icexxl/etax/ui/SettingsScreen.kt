@@ -27,6 +27,8 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.ImportContacts
+import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.JoinLeft
@@ -703,6 +705,32 @@ private fun SettingsPageContent(
                     }
                     item {
                         CouiPreference(
+                            title = "OpenClaw 渠道",
+                            summary = "与 OpenClaw agent 对话",
+                            icon = {
+                                CouiSettingsIcon(
+                                    Icons.Rounded.Forum,
+                                    SettingsIconColors.Blue,
+                                )
+                            },
+                            onClick = { onNavigate(AppRoute.OpenClaw) },
+                        )
+                    }
+                    item {
+                        CouiPreference(
+                            title = "免 Root 虚拟屏",
+                            summary = "通过 Shizuku 管理后台副屏",
+                            icon = {
+                                CouiSettingsIcon(
+                                    Icons.Rounded.OpenInNew,
+                                    SettingsIconColors.Green,
+                                )
+                            },
+                            onClick = { onNavigate(AppRoute.VirtualScreen) },
+                        )
+                    }
+                    item {
+                        CouiPreference(
                             title = stringResource(R.string.route_mcp_servers),
                             icon = {
                                 CouiSettingsIcon(
@@ -1169,6 +1197,18 @@ private fun SettingsPageContent(
                             title = stringResource(R.string.route_skills),
                             startAction = { SettingsIcon(Icons.Rounded.ImportContacts) },
                             onClick = { onNavigate(AppRoute.Skills) },
+                        )
+                        ArrowPreference(
+                            title = "OpenClaw 渠道",
+                            summary = "与 OpenClaw agent 对话",
+                            startAction = { SettingsIcon(Icons.Rounded.Forum) },
+                            onClick = { onNavigate(AppRoute.OpenClaw) },
+                        )
+                        ArrowPreference(
+                            title = "免 Root 虚拟屏",
+                            summary = "通过 Shizuku 管理后台副屏",
+                            startAction = { SettingsIcon(Icons.Rounded.OpenInNew) },
+                            onClick = { onNavigate(AppRoute.VirtualScreen) },
                         )
                         ArrowPreference(
                             title = stringResource(R.string.route_mcp_servers),

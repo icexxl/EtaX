@@ -34,6 +34,10 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object OpenClaw : AppRoute
 
+    /** 免 Root 虚拟屏设置与状态页。 */
+    @Serializable
+    data object VirtualScreen : AppRoute
+
     @Serializable
     data object ScheduledTasks : AppRoute
 

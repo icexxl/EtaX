@@ -85,6 +85,8 @@ import io.github.icexxl.etax.channel.openclaw.OpenClawChatScreen
 import io.github.icexxl.etax.channel.openclaw.OpenClawClient
 import io.github.icexxl.etax.channel.openclaw.OpenClawNotifier
 import io.github.icexxl.etax.channel.openclaw.OpenClawSettings
+import io.github.icexxl.etax.channel.openclaw.OpenClawSettingsScreen
+import io.github.icexxl.etax.channel.vscreen.VScreenSettingsScreen
 import io.github.icexxl.etax.channel.openclaw.OpenClawHomeStore
 import io.github.icexxl.etax.ui.pages.providers.CommunityCatalogProviderScreen
 import io.github.icexxl.etax.ui.pages.providers.CommunityCatalogScreen
@@ -591,6 +593,15 @@ fun AgentAppRoot(
                                 }
                             },
                         )
+                    }
+                    entry<AppRoute.OpenClaw>(swipeDismiss = activeSwipeDismiss) {
+                        OpenClawSettingsScreen(
+                            onBack = { popRoute() },
+                            onSaved = { openClawStore.reloadAgents() },
+                        )
+                    }
+                    entry<AppRoute.VirtualScreen>(swipeDismiss = activeSwipeDismiss) {
+                        VScreenSettingsScreen(onBack = { popRoute() })
                     }
                     entry<AppRoute.Characters>(swipeDismiss = activeSwipeDismiss) {
                         LaunchedEffect(backStack.lastOrNull() == AppRoute.Characters) {

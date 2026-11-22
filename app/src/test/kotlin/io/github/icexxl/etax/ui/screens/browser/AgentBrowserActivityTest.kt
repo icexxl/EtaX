@@ -22,7 +22,12 @@ class AgentBrowserActivityTest {
         val component = ComponentName(context, AgentBrowserActivity::class.java)
         val info = context.packageManager.getActivityInfo(component, 0)
         assertFalse(info.exported)
-        assertEquals(context.applicationInfo.processName, info.processName)
+        // Shizuku 的 provider AAR 带空 <application>，会让 Robolectric 的
+        // applicationInfo.processName 为 null；这里比较"是否与宿主同进程"的意图：
+        // 未声明 android:process 时归一到宿主包名。
+        val expected = context.applicationInfo.processName ?: context.packageName
+        val actual = info.processName ?: context.packageName
+        assertEquals(expected, actual)
     }
 
     @Test
