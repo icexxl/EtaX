@@ -72,6 +72,8 @@ android {
         }
         release {
             versionNameSuffix = buildMetadataSuffix
+            // 有 ETA_RELEASE_* 环境变量才签名；缺失时产出未签名包，
+            // 避免本地/无凭据环境直接在构建期失败。发布前必须确认已签名。
             signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
