@@ -36,8 +36,8 @@
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.VIBRATE" />
-    <!-- 免 Root 虚拟屏：由 Shizuku 授权后台副屏的用户服务 Binder。 -->
-    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+    <!-- 免 Root 虚拟屏：由 Stellar 授权后台副屏的用户服务 Binder。 -->
+    <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
     <permission
         android:name="io.github.icexxl.etax.permission.CONTROL_ACCESSIBILITY_PROTECTION"
@@ -213,10 +213,10 @@
             </intent-filter>
         </receiver>
 
-        <!-- Shizuku distributes the authorized daemon Binder; no local ADB pairing provider. -->
+        <!-- Stellar 通过该 provider 分授权限后的服务 Binder。 -->
         <provider
-            android:name="rikka.shizuku.ShizukuProvider"
-            android:authorities="${applicationId}.shizuku"
+            android:name="roro.stellar.StellarProvider"
+            android:authorities="${applicationId}.stellar"
             android:exported="true"
             android:multiprocess="false"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
@@ -230,6 +230,9 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/eta_file_paths" />
         </provider>
+        <meta-data
+            android:name="roro.stellar.permissions"
+            android:value="stellar" />
     </application>
 
 </manifest>

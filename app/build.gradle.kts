@@ -190,9 +190,9 @@ dependencies {
     implementation(libs.ratex.android)
     implementation(libs.hidden.api.bypass)
 
-    // 免 Root 虚拟屏的后台进程由 Shizuku 的 shell 用户 (uid 2000) 托管。
-    implementation("dev.rikka.shizuku:api:13.1.5")
-    implementation("dev.rikka.shizuku:provider:13.1.5")
+    // 免 Root 虚拟屏的后台进程由 Stellar（Shizuku 分支）的 shell 用户 (uid 2000) 托管。
+    // Stellar 官方发布物缺少 aidl/shared/userservice，故以本地模块内联其客户端源码。
+    implementation(project(":stellar-api"))
 
     // DataStore：Provider / Model 结构化 JSON 与当前选中 ID 等键值
     implementation(libs.datastore.preferences)

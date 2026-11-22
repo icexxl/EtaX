@@ -73,5 +73,6 @@
 
 # Shizuku instantiates the Agent-VScreen-derived daemon by class name.
 -keep class io.github.icexxl.etax.channel.vscreen.VScreenDisplayService { *; }
-# Shizuku 的 provider 与 api 由系统按类名与资源名反射访问。
--keep class rikka.shizuku.** { *; }
+# Stellar 的 provider、api 与用户服务由框架按类名反射访问。
+-keep class roro.stellar.** { *; }
+-keep class com.stellar.** { *; }

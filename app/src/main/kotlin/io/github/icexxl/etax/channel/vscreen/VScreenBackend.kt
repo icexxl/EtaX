@@ -14,7 +14,11 @@ import io.github.icexxl.etax.BuildConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import rikka.shizuku.Shizuku
+import roro.stellar.Stellar
+import roro.stellar.StellarHelper
+import roro.stellar.userservice.ServiceMode
+import roro.stellar.userservice.StellarUserService
+import roro.stellar.userservice.UserServiceArgs
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -40,66 +44,77 @@ internal object VScreenBackend {
     @Volatile private var binder: IBinder? = null
     @Volatile private var latch: CountDownLatch? = null
     private val lock = Any()
-    private val received = Shizuku.OnBinderReceivedListener { refresh() }
-    private val dead = Shizuku.OnBinderDeadListener { binder = null; refresh() }
-    private val permission = Shizuku.OnRequestPermissionResultListener { _, _ -> refresh() }
-    private val connection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            binder = service?.takeIf { it.pingBinder() }
+    @Volatile private var lastStartError: String? = null
+    private val received = Stellar.OnBinderReceivedListener { refresh() }
+    private val dead = Stellar.OnBinderDeadListener { binder = null; refresh() }
+    private val permission = Stellar.OnRequestPermissionResultListener { _, _, _ -> refresh() }
+    private val connection = object : StellarUserService.ServiceCallback {
+        override fun onServiceConnected(service: IBinder) {
+            lastStartError = null
+            binder = service.takeIf { it.pingBinder() }
             latch?.countDown()
         }
-        override fun onServiceDisconnected(name: ComponentName?) { binder = null }
+
+        override fun onServiceDisconnected() { binder = null }
+
+        override fun onServiceStartFailed(errorCode: Int, message: String) {
+            lastStartError = "code=$errorCode $message"
+            latch?.countDown()
+        }
     }
     private val args by lazy {
-        Shizuku.UserServiceArgs(ComponentName(BuildConfig.APPLICATION_ID, VScreenDisplayService::class.java.name))
-            .daemon(true).processNameSuffix("vscreen").debuggable(false)
-            .version(BuildConfig.VERSION_CODE * 100 + VScreenDisplayService.PROTOCOL)
+        UserServiceArgs.Builder(VScreenDisplayService::class.java)
+            .processNameSuffix("vscreen")
+            .debug(false)
+            .versionCode(BuildConfig.VERSION_CODE * 100L + VScreenDisplayService.PROTOCOL)
+            .serviceMode(ServiceMode.DAEMON)
+            .build()
     }
 
     @Synchronized fun init(application: Application) {
         if (app != null) return
         app = application
-        Shizuku.addBinderReceivedListenerSticky(received)
-        Shizuku.addBinderDeadListener(dead)
-        Shizuku.addRequestPermissionResultListener(permission)
+        Stellar.addBinderReceivedListenerSticky(received)
+        Stellar.addBinderDeadListener(dead)
+        Stellar.addRequestPermissionResultListener(permission)
         refresh()
     }
     fun refresh() {
-        val alive = runCatching { Shizuku.pingBinder() }.getOrDefault(false)
+        val alive = runCatching { Stellar.pingBinder() }.getOrDefault(false)
         mutableReadiness.value = when {
-            alive && runCatching { Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED }.getOrDefault(false) -> State.READY
+            alive && runCatching { Stellar.checkSelfPermission() }.getOrDefault(false) -> State.READY
             alive -> State.NEED_PERMISSION
             installedManager() != null -> State.NOT_RUNNING
             else -> State.NOT_INSTALLED
         }
         if (mutableReadiness.value != State.READY) binder = null
     }
-    private fun installedManager(): String? = listOf("moe.shizuku.privileged.api", "frb.axeron.manager").firstOrNull {
+    private fun installedManager(): String? = listOf("roro.stellar.manager", "moe.shizuku.privileged.api").firstOrNull {
         runCatching { app?.packageManager?.getPackageInfo(it, 0) != null }.getOrDefault(false)
     }
     fun isReady(): Boolean = readiness.value == State.READY
     fun requestPermission(): Boolean = runCatching {
-        if (!Shizuku.pingBinder() || Shizuku.shouldShowRequestPermissionRationale()) false
-        else { Shizuku.requestPermission(0xC1A4D); true }
+        if (!Stellar.pingBinder() || Stellar.shouldShowRequestPermissionRationale()) false
+        else { Stellar.requestPermission(requestCode = 0xC1A4D); true }
     }.getOrDefault(false)
     fun openManager(context: Context) {
         val intent = installedManager()?.let { context.packageManager.getLaunchIntentForPackage(it) }
-            ?: Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/RikkaApps/Shizuku/releases"))
+            ?: Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/roro2239/Stellar"))
         runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }
     private fun service(): IBinder {
         binder?.takeIf { it.isBinderAlive }?.let { return it }
-        check(isReady()) { "Shizuku not ready" }
+        check(isReady()) { "Stellar not ready" }
         synchronized(lock) {
             binder?.takeIf { it.isBinderAlive }?.let { return it }
             val waiting = CountDownLatch(1); latch = waiting
-            Shizuku.bindUserService(args, connection)
-            check(waiting.await(10, TimeUnit.SECONDS)) { "Shizuku service connection timed out" }
-            return binder ?: error("Shizuku service connection failed")
+            StellarUserService.bindUserService(args, connection)
+            check(waiting.await(10, TimeUnit.SECONDS)) { "Stellar service connection timed out" }
+            return binder ?: error("Stellar service connection failed: ${lastStartError ?: "unknown"}")
         }
     }
     private fun <T> call(code: Int, write: (Parcel) -> Unit, read: (Parcel) -> T): Result<T> = runCatching {
-        check(isReady()) { "Shizuku permission is unavailable" }
+        check(isReady()) { "Stellar permission is unavailable" }
         val b = service(); val data = Parcel.obtain(); val reply = Parcel.obtain()
         try {
             data.writeInterfaceToken(VScreenDisplayService.DESCRIPTOR); write(data)
@@ -178,7 +193,7 @@ internal object VScreenBackend {
         check(verified) { "Launch could not be verified on display $displayId; it may have been redirected" }
     }
 
-    /** Runs `am` inside the Shizuku daemon (uid 2000); null when the daemon predates the transaction. */
+    /** Runs `am` inside the Stellar daemon (uid 2000); null when the daemon predates the transaction. */
     private fun tryDaemonLaunch(displayId: Int, argv: Array<String>): String? = try {
         call(VScreenDisplayService.LAUNCH, { p ->
             p.writeInt(displayId); p.writeInt(argv.size); argv.forEach(p::writeString)
@@ -187,12 +202,10 @@ internal object VScreenBackend {
         if (unsupported.message?.contains("Unsupported") == true) null else throw unsupported
     }
 
-    /** Fallback for daemons predating the LAUNCH transaction: Shizuku's hidden process API. */
+    /** Fallback for daemons predating the LAUNCH transaction: Stellar 的特权进程接口。 */
     private fun runLegacyAmStart(argv: Array<String>): String {
-        val method = Shizuku::class.java.getDeclaredMethod(
-            "newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java,
-        ).apply { isAccessible = true }
-        val process = method.invoke(null, arrayOf("am") + argv, null, null) as Process
+        val command: Array<String?> = (listOf("am") + argv).toTypedArray()
+        val process = Stellar.newProcess(command, null, null) as Process
         val output = StringBuilder()
         val reader = Thread {
             runCatching { process.inputStream.bufferedReader().useLines { lines -> lines.forEach { output.appendLine(it) } } }
