@@ -25,8 +25,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ShortText
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.MapsUgc
+import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -149,6 +151,8 @@ internal fun AgentAppShell(
     modifier: Modifier = Modifier,
     homeTitle: String? = null,
     homeCharacter: RoleplayChatUi? = null,
+    homeModeOpenClaw: Boolean = false,
+    onToggleHomeMode: () -> Unit = {},
     homeModelPickerState: AgentModelPickerUiState? = null,
     isHomeStreaming: Boolean = false,
     hasPermissionAttention: Boolean = false,
@@ -189,6 +193,11 @@ internal fun AgentAppShell(
                                         icon = Icons.AutoMirrored.Outlined.ShortText,
                                         contentDescription = stringResource(R.string.action_conversation_history),
                                         onClick = onOpenConversationPane,
+                                    )
+                                    CouiTopAppBarIconButton(
+                                        icon = if (homeModeOpenClaw) Icons.Rounded.Forum else Icons.Rounded.SmartToy,
+                                        contentDescription = if (homeModeOpenClaw) "切换到模型对话" else "切换到 OpenClaw 对话",
+                                        onClick = onToggleHomeMode,
                                     )
                                     Box(
                                         modifier = Modifier.weight(1f),
@@ -256,6 +265,8 @@ internal fun AgentAppShell(
                                 isHomeStreaming = isHomeStreaming,
                                 onHomeModelSelected = onHomeModelSelected,
                                 onOpenCharacter = onOpenCharacter,
+                                homeModeOpenClaw = homeModeOpenClaw,
+                                onToggleHomeMode = onToggleHomeMode,
                             )
                         }
                     },
@@ -416,12 +427,16 @@ private fun AgentTopBar(
     isHomeStreaming: Boolean,
     onHomeModelSelected: (String) -> Unit,
     onOpenCharacter: () -> Unit,
+    homeModeOpenClaw: Boolean,
+    onToggleHomeMode: () -> Unit,
 ) {
     val isHome = route is AppRoute.Home
     if (isHome && homeModelPickerState != null) {
         HomeMiuixTopBar(
             backdrop = backdrop,
             isCurrentRoute = isCurrentRoute,
+            homeModeOpenClaw = homeModeOpenClaw,
+            onToggleHomeMode = onToggleHomeMode,
             onOpenConversationPane = onOpenConversationPane,
             onNewConversation = onNewConversation,
             onOpenTerminal = onOpenTerminal,
@@ -453,6 +468,8 @@ private fun AgentTopBar(
 private fun HomeMiuixTopBar(
     backdrop: Backdrop?,
     isCurrentRoute: Boolean,
+    homeModeOpenClaw: Boolean,
+    onToggleHomeMode: () -> Unit,
     onOpenConversationPane: () -> Unit,
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
@@ -500,6 +517,17 @@ private fun HomeMiuixTopBar(
                 .padding(horizontal = GlassTopAppBarDefaults.HorizontalPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            GlassIconButton(
+                onClick = onToggleHomeMode,
+                backdrop = buttonBackdrop,
+            ) {
+                Icon(
+                    imageVector = if (homeModeOpenClaw) Icons.Rounded.Forum else Icons.Rounded.SmartToy,
+                    contentDescription = if (homeModeOpenClaw) "切换到模型对话" else "切换到 OpenClaw 对话",
+                    modifier = Modifier.size(24.dp),
+                    tint = MiuixTheme.colorScheme.onSurface,
+                )
+            }
             GlassIconButton(
                 onClick = onOpenConversationPane,
                 backdrop = buttonBackdrop,
@@ -635,7 +663,7 @@ private fun TopBarOverflowMenu(
 
 @Composable
 private fun titleForRoute(route: AppRoute?): String = when (route) {
-    is AppRoute.Home, is AppRoute.Browser -> ""
+    is AppRoute.Home, is AppRoute.OpenClaw, is AppRoute.Browser -> ""
     is AppRoute.Terminal -> stringResource(R.string.route_terminal)
     is AppRoute.Tools -> stringResource(R.string.route_tools)
     is AppRoute.WebToolsSettings -> stringResource(R.string.web_tools_settings_title)

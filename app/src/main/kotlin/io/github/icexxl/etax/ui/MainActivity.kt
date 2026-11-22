@@ -202,5 +202,8 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_CONVERSATION_KEY = "io.github.icexxl.etax.extra.CONVERSATION_KEY"
         const val ACTION_OPEN_SCHEDULED_TASK_DETAIL = "io.github.icexxl.etax.action.OPEN_SCHEDULED_TASK_DETAIL"
         const val EXTRA_SCHEDULED_TASK_ID = "io.github.icexxl.etax.extra.SCHEDULED_TASK_ID"
+        /** 通知栏点进来时直达的 OpenClaw 会话（一次性消费）。 */
+        const val EXTRA_OPENCLAW_SESSION = "io.github.icexxl.etax.extra.OPENCLAW_SESSION"
+        const val EXTRA_OPENCLAW_AGENT = "io.github.icexxl.etax.extra.OPENCLAW_AGENT"
     }
 }

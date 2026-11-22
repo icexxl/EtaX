@@ -30,6 +30,10 @@ sealed interface AppRoute : NavKey {
     @Serializable
     data object Skills : AppRoute
 
+    /** OpenClaw 渠道：与模型对话并列的独立 agent 聊天模式。 */
+    @Serializable
+    data object OpenClaw : AppRoute
+
     @Serializable
     data object ScheduledTasks : AppRoute
 

@@ -79,6 +79,13 @@ import io.github.icexxl.etax.ui.model.PermissionStatusUi
 import io.github.icexxl.etax.ui.model.roleplayChatUi
 import io.github.icexxl.etax.ui.navigation.AgentNavigator
 import io.github.icexxl.etax.ui.navigation.AppRoute
+import io.github.icexxl.etax.channel.openclaw.HomeMode
+import io.github.icexxl.etax.channel.openclaw.HomeModeStore
+import io.github.icexxl.etax.channel.openclaw.OpenClawChatScreen
+import io.github.icexxl.etax.channel.openclaw.OpenClawClient
+import io.github.icexxl.etax.channel.openclaw.OpenClawNotifier
+import io.github.icexxl.etax.channel.openclaw.OpenClawSettings
+import io.github.icexxl.etax.channel.openclaw.OpenClawHomeStore
 import io.github.icexxl.etax.ui.pages.providers.CommunityCatalogProviderScreen
 import io.github.icexxl.etax.ui.pages.providers.CommunityCatalogScreen
 import io.github.icexxl.etax.ui.pages.providers.ModelProviderDetailScreen
@@ -154,6 +161,17 @@ fun AgentAppRoot(
     val resources = LocalResources.current
     val uiScope = rememberCoroutineScope()
     val backStack = rememberNavBackStack<AppRoute>(AppRoute.Home)
+    // 主界面模式：模型对话 / OpenClaw 渠道。切换会持久化，重启后保持。
+    val homeModeStore = remember(context) { HomeModeStore(context) }
+    var homeMode by remember { mutableStateOf(homeModeStore.load()) }
+    val openClawStore = remember(context) {
+        val settings = OpenClawSettings(context)
+        OpenClawHomeStore(
+            client = OpenClawClient(),
+            settings = settings,
+            notifier = OpenClawNotifier(context),
+        )
+    }
     LaunchedEffect(openSpeechSettings) {
         if (openSpeechSettings) {
             if (backStack.lastOrNull() != AppRoute.SpeechSettings) backStack.add(AppRoute.SpeechSettings)
@@ -387,6 +405,11 @@ fun AgentAppRoot(
             onOpenCharacter = {
                 agentState.homeState.roleplay?.let { pushRoute(AppRoute.CharacterDetail(it.characterId)) }
             },
+            homeModeOpenClaw = homeMode == HomeMode.OPENCLAW,
+            onToggleHomeMode = {
+                homeMode = if (homeMode == HomeMode.OPENCLAW) HomeMode.ETA else HomeMode.OPENCLAW
+                homeModeStore.save(homeMode)
+            },
         ) { padding ->
             Box(
                 modifier = Modifier
@@ -422,8 +445,17 @@ fun AgentAppRoot(
                 ),
             ) {
                     entry<AppRoute.Home>(swipeDismiss = activeSwipeDismiss) {
-                        RoutedShell(route = AppRoute.Home, applyShellPadding = false) { shellPadding ->
-                            AgentHomeScreen(
+                        RoutedShell(
+                            route = AppRoute.Home,
+                            applyShellPadding = homeMode == HomeMode.OPENCLAW,
+                        ) { shellPadding ->
+                            if (homeMode == HomeMode.OPENCLAW) {
+                                OpenClawChatScreen(
+                                    store = openClawStore,
+                                    topInset = shellPadding.calculateTopPadding(),
+                                )
+                            } else {
+                                AgentHomeScreen(
                                 state = agentState.homeState,
                                 modelPickerState = agentState.modelPickerState,
                                 isBranching = agentState.isBranchingCurrentConversation,
@@ -484,6 +516,7 @@ fun AgentAppRoot(
                                 isDrawerOpen = conversationPaneOpen,
                             )
                         }
+                            }
                     }
                     entry<AppRoute.Browser> { route ->
                         // 保留已保存路由的恢复入口；新打开操作直接进入原生浏览器窗口。
