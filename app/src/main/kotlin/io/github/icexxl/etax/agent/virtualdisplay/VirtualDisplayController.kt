@@ -469,7 +469,29 @@ internal object VirtualDisplayController {
             }
         }
 
-        if (!launchedByRoot) {
+        // shell 拥有的副屏不接受本应用 uid 代起别的 Activity
+        // （ActivityManager 会以 SecurityException 拒绝），必须回服务端以 uid 2000 执行 am。
+        var launchedByDaemon = false
+        if (!launchedByRoot && isShellDisplay(displayId)) {
+            val component = launchIntent.component?.flattenToShortString()
+            val pkg = component?.substringBefore('/') ?: packageName
+            val activity = component?.substringAfter('/', missingDelimiterValue = "")
+            if (pkg.isNotBlank()) {
+                launchedByDaemon = runCatching {
+                    VScreenBackend.launch(
+                        displayId = displayId,
+                        pkg = pkg,
+                        activity = activity?.takeIf { it.isNotBlank() },
+                    ).getOrThrow()
+                }.onFailure { throwable ->
+                    AndroidAgentLogger.warn(
+                        "Virtual display daemon launch failed: type=${throwable.safeLogType()}",
+                    )
+                }.isSuccess
+            }
+        }
+
+        if (!launchedByRoot && !launchedByDaemon) {
             checkCancellation()
             val startedInProcess = runCatching {
                 val intent = Intent(launchIntent).apply {
