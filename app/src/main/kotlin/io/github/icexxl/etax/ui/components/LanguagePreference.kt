@@ -1,0 +1,98 @@
+package io.github.icexxl.etax.ui.components
+
+import android.os.LocaleList
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import io.github.icexxl.etax.R
+import io.github.icexxl.etax.data.model.AppearanceUiStyle
+import io.github.icexxl.etax.data.repository.LanguageSettingsRepository
+import io.github.icexxl.etax.ui.app.LocalUiStyle
+import io.github.icexxl.etax.ui.components.coui.CouiDropdownPreference
+import io.github.icexxl.etax.ui.components.coui.CouiSettingsIcon
+import top.yukonga.miuix.kmp.glass.GlassDropdownPreference
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+@Composable
+internal fun LanguagePreference(
+    iconTint: Color = MiuixTheme.colorScheme.onBackground,
+    startAction: (@Composable () -> Unit)? = null,
+) {
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val repository = remember(context.applicationContext) {
+        LanguageSettingsRepository(context.applicationContext)
+    }
+    var selectedLocale by remember(repository, configuration) {
+        mutableStateOf(repository.selectedLocale())
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, repository) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                selectedLocale = repository.selectedLocale()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val locales = remember(repository) {
+        repository.supportedLocales.sortedBy { it.getDisplayName(it).lowercase(it) }
+    }
+    val systemLabel = stringResource(R.string.settings_language_system)
+    val labels = remember(locales, systemLabel) {
+        listOf(systemLabel) + locales.map { locale ->
+            locale.getDisplayName(locale).replaceFirstChar {
+                if (it.isLowerCase()) it.titlecase(locale) else it.toString()
+            }
+        }
+    }
+    val selectedIndex = selectedLocale?.let { selected ->
+        locales.indexOfFirst { LocaleList.matchesLanguageAndScript(it, selected) } + 1
+    } ?: 0
+    val onSelect: (Int) -> Unit = { index ->
+        if (index in labels.indices) {
+            repository.selectLocale(if (index == 0) null else locales[index - 1])
+            selectedLocale = repository.selectedLocale()
+        }
+    }
+
+    when (LocalUiStyle.current) {
+        AppearanceUiStyle.COUI -> {
+            CouiDropdownPreference(
+                title = stringResource(R.string.settings_language),
+                items = labels,
+                selectedIndex = selectedIndex,
+                icon = if (startAction != null) {
+                    { CouiSettingsIcon(icon = Icons.Rounded.Language, tint = iconTint) }
+                } else {
+                    null
+                },
+                onSelectedIndexChange = onSelect,
+            )
+        }
+        AppearanceUiStyle.MIUIX -> {
+            GlassDropdownPreference(
+                title = stringResource(R.string.settings_language),
+                items = labels,
+                selectedIndex = selectedIndex,
+                backdrop = currentGlassOverlayBackdrop(),
+                startAction = startAction,
+                onSelectedIndexChange = onSelect,
+            )
+        }
+    }
+}
