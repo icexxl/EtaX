@@ -62,7 +62,7 @@ internal object VirtualDisplayController {
     private var highFrequencyPreview: Boolean = false
 
     private var displayResources: VirtualDisplaySessionResources? = null
-    /** 由 Shizuku 后台显示服务（shell uid）拥有的副屏 id；与 App 自建屏互斥。 */
+    /** 由特权服务（Stellar/Shizuku，shell uid）拥有的副屏 id；与 App 自建屏互斥。 */
     @Volatile
     private var shellDisplayId: Int = Display.INVALID_DISPLAY
     @Volatile
@@ -144,7 +144,7 @@ internal object VirtualDisplayController {
                 runCatching { VScreenBackend.refresh() }
                 val daemonReady = VScreenBackend.isReady()
                 AndroidAgentLogger.info(
-                    "Virtual display backend probe: shizuku=${if (daemonReady) "ready" else "unavailable"} " +
+                    "Virtual display backend probe: daemon=${if (daemonReady) "ready" else "unavailable"} " +
                         "rootAllowed=${rootAvailable()}",
                 )
                 if (daemonReady) {
@@ -154,7 +154,7 @@ internal object VirtualDisplayController {
                     )
                     if (attached == null) {
                         // 服务拒绝：继续尝试其它后端，但不把任务丢回物理主屏。
-                        AndroidAgentLogger.warn("Shizuku daemon attach rejected; falling back to in-process display")
+                        AndroidAgentLogger.warn("Privileged daemon attach rejected; falling back to in-process display")
                     } else {
                         val (daemonId, activeReader) = attached
                         val usable = isDisplayUsable(manager, daemonId)
@@ -191,7 +191,7 @@ internal object VirtualDisplayController {
                             }
                             if (accepted) {
                                 AndroidAgentLogger.info(
-                                    "Virtual display ready (shizuku daemon): displayId=$daemonId " +
+                                    "Virtual display ready (daemon): displayId=$daemonId " +
                                         "size=${activeReader.width}x${activeReader.height}",
                                 )
                                 return daemonId
@@ -377,7 +377,7 @@ internal object VirtualDisplayController {
                 CanvasRoutingPolicy.VIRTUAL_DISPLAY_NAME, width, height, densityDpi, readerAtEntry.surface,
             )
             created.exceptionOrNull()?.let {
-                AndroidAgentLogger.warn("Shizuku create failed: ${it.javaClass.simpleName}: ${it.message}")
+                AndroidAgentLogger.warn("Daemon display create failed: ${it.javaClass.simpleName}: ${it.message}")
             }
             created.getOrNull()?.displayId
         }

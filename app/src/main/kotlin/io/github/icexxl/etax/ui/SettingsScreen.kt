@@ -719,7 +719,7 @@ private fun SettingsPageContent(
                     item {
                         CouiPreference(
                             title = "免 Root 虚拟屏",
-                            summary = "通过 Shizuku 管理后台副屏",
+                            summary = "通过 Stellar 管理后台副屏",
                             icon = {
                                 CouiSettingsIcon(
                                     Icons.Rounded.OpenInNew,
@@ -1206,7 +1206,7 @@ private fun SettingsPageContent(
                         )
                         ArrowPreference(
                             title = "免 Root 虚拟屏",
-                            summary = "通过 Shizuku 管理后台副屏",
+                            summary = "通过 Stellar 管理后台副屏",
                             startAction = { SettingsIcon(Icons.Rounded.OpenInNew) },
                             onClick = { onNavigate(AppRoute.VirtualScreen) },
                         )
