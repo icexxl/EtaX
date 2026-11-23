@@ -155,6 +155,12 @@ internal fun AgentAppShell(
     onToggleHomeMode: () -> Unit = {},
     /** OpenClaw 模式下替换侧栏内容；为 null 时用模型对话的会话列表。 */
     openClawPane: (@Composable (androidx.compose.ui.unit.Dp) -> Unit)? = null,
+    /** OpenClaw 顶栏左段：当前 agent 名。 */
+    openClawTitle: (@Composable () -> Unit)? = null,
+    /** OpenClaw 顶栏中段：下拉箭头选会话。 */
+    openClawSessionPicker: (@Composable () -> Unit)? = null,
+    /** OpenClaw 顶栏右段：三点菜单。 */
+    openClawMenu: (@Composable () -> Unit)? = null,
     homeModelPickerState: AgentModelPickerUiState? = null,
     isHomeStreaming: Boolean = false,
     hasPermissionAttention: Boolean = false,
@@ -192,16 +198,17 @@ internal fun AgentAppShell(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     CouiTopAppBarIconButton(
-                                        icon = Icons.AutoMirrored.Outlined.ShortText,
-                                        contentDescription = stringResource(R.string.action_conversation_history),
-                                        onClick = onOpenConversationPane,
-                                    )
-                                    CouiTopAppBarIconButton(
                                         icon = if (homeModeOpenClaw) Icons.Rounded.Forum else Icons.Rounded.SmartToy,
                                         contentDescription = if (homeModeOpenClaw) "切换到模型对话" else "切换到 OpenClaw 对话",
                                         onClick = onToggleHomeMode,
                                     )
-                                    Box(
+                                    if (openClawTitle != null && openClawSessionPicker != null) {
+                                        openClawTitle()
+                                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                            openClawSessionPicker()
+                                        }
+                                        openClawMenu?.invoke()
+                                    } else Box(
                                         modifier = Modifier.weight(1f),
                                         contentAlignment = Alignment.Center,
                                     ) {
@@ -218,13 +225,15 @@ internal fun AgentAppShell(
                                             CouiText(titleForRoute(currentRoute), maxLines = 1)
                                         }
                                     }
-                                    CouiTopBarOverflowMenu(
-                                        dark = dark,
-                                        colors = colors,
-                                        onNewConversation = onNewConversation,
-                                        onOpenTerminal = onOpenTerminal,
-                                        onOpenBrowser = onOpenBrowser,
-                                    )
+                                    if (openClawTitle == null || openClawSessionPicker == null) {
+                                        CouiTopBarOverflowMenu(
+                                            dark = dark,
+                                            colors = colors,
+                                            onNewConversation = onNewConversation,
+                                            onOpenTerminal = onOpenTerminal,
+                                            onOpenBrowser = onOpenBrowser,
+                                        )
+                                    }
                                 }
                             }
                             else -> ProvideCouiMaterial(backdrop) {
@@ -269,6 +278,9 @@ internal fun AgentAppShell(
                                 onOpenCharacter = onOpenCharacter,
                                 homeModeOpenClaw = homeModeOpenClaw,
                                 onToggleHomeMode = onToggleHomeMode,
+                                openClawTitle = openClawTitle,
+                                openClawSessionPicker = openClawSessionPicker,
+                                openClawMenu = openClawMenu,
                             )
                         }
                     },
@@ -432,6 +444,9 @@ private fun AgentTopBar(
     onOpenCharacter: () -> Unit,
     homeModeOpenClaw: Boolean,
     onToggleHomeMode: () -> Unit,
+    openClawTitle: (@Composable () -> Unit)? = null,
+    openClawSessionPicker: (@Composable () -> Unit)? = null,
+    openClawMenu: (@Composable () -> Unit)? = null,
 ) {
     val isHome = route is AppRoute.Home
     if (isHome && homeModelPickerState != null) {
@@ -440,6 +455,9 @@ private fun AgentTopBar(
             isCurrentRoute = isCurrentRoute,
             homeModeOpenClaw = homeModeOpenClaw,
             onToggleHomeMode = onToggleHomeMode,
+            openClawTitle = openClawTitle,
+            openClawSessionPicker = openClawSessionPicker,
+            openClawMenu = openClawMenu,
             onOpenConversationPane = onOpenConversationPane,
             onNewConversation = onNewConversation,
             onOpenTerminal = onOpenTerminal,
@@ -473,6 +491,9 @@ private fun HomeMiuixTopBar(
     isCurrentRoute: Boolean,
     homeModeOpenClaw: Boolean,
     onToggleHomeMode: () -> Unit,
+    openClawTitle: (@Composable () -> Unit)? = null,
+    openClawSessionPicker: (@Composable () -> Unit)? = null,
+    openClawMenu: (@Composable () -> Unit)? = null,
     onOpenConversationPane: () -> Unit,
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
@@ -531,32 +552,32 @@ private fun HomeMiuixTopBar(
                     tint = MiuixTheme.colorScheme.onSurface,
                 )
             }
-            GlassIconButton(
-                onClick = onOpenConversationPane,
-                backdrop = buttonBackdrop,
-            ) {
-                Icon(
-                    imageVector = MiuixIcons.Glass.Sidebar,
-                    modifier = Modifier.size(28.dp),
-                    tint = MiuixTheme.colorScheme.onSurface,
-                    contentDescription = stringResource(R.string.action_conversation_history),
+            if (openClawTitle != null && openClawSessionPicker != null) {
+                Box(modifier = Modifier.padding(start = 8.dp)) { openClawTitle() }
+                Box(
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    openClawSessionPicker()
+                }
+                openClawMenu?.invoke()
+            } else {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    centerContent()
+                }
+                TopBarOverflowMenu(
+                    backdrop = buttonBackdrop,
+                    isCurrentRoute = isCurrentRoute,
+                    onNewConversation = onNewConversation,
+                    onOpenTerminal = onOpenTerminal,
+                    onOpenBrowser = onOpenBrowser,
                 )
             }
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                centerContent()
-            }
-            TopBarOverflowMenu(
-                backdrop = buttonBackdrop,
-                isCurrentRoute = isCurrentRoute,
-                onNewConversation = onNewConversation,
-                onOpenTerminal = onOpenTerminal,
-                onOpenBrowser = onOpenBrowser,
-            )
         }
     }
 }

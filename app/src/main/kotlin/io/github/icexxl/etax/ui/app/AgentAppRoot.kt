@@ -87,6 +87,9 @@ import io.github.icexxl.etax.channel.openclaw.OpenClawNotifier
 import io.github.icexxl.etax.channel.openclaw.OpenClawSettings
 import io.github.icexxl.etax.channel.openclaw.OpenClawSettingsScreen
 import io.github.icexxl.etax.channel.vscreen.VScreenSettingsScreen
+import io.github.icexxl.etax.channel.openclaw.OpenClawTopBarAgentName
+import io.github.icexxl.etax.channel.openclaw.OpenClawTopBarSessionPicker
+import io.github.icexxl.etax.channel.openclaw.OpenClawTopBarMenu
 import io.github.icexxl.etax.channel.openclaw.OpenClawPanePanel
 import io.github.icexxl.etax.channel.openclaw.OpenClawHomeStore
 import io.github.icexxl.etax.ui.pages.providers.CommunityCatalogProviderScreen
@@ -430,6 +433,26 @@ fun AgentAppRoot(
                             homeModeStore.save(mode)
                         },
                         onSessionSelected = { conversationPaneOpen = false },
+                    )
+                }
+            } else {
+                null
+            },
+            openClawTitle = if (homeMode == HomeMode.OPENCLAW) {
+                { OpenClawTopBarAgentName(store = openClawStore) }
+            } else {
+                null
+            },
+            openClawSessionPicker = if (homeMode == HomeMode.OPENCLAW) {
+                { OpenClawTopBarSessionPicker(store = openClawStore) }
+            } else {
+                null
+            },
+            openClawMenu = if (homeMode == HomeMode.OPENCLAW) {
+                {
+                    OpenClawTopBarMenu(
+                        store = openClawStore,
+                        onOpenSettings = { pushRoute(AppRoute.OpenClaw) },
                     )
                 }
             } else {
