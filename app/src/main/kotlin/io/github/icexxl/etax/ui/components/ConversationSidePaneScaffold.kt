@@ -88,6 +88,8 @@ fun ConversationSidePaneScaffold(
     modifier: Modifier = Modifier,
     activeModelLabel: String? = null,
     hasPermissionAttention: Boolean = false,
+    /** 侧栏内容替换：OpenClaw 模式用它换成渠道自己的 agent / 会话列表。 */
+    paneContent: (@Composable (androidx.compose.ui.unit.Dp) -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val sceneLifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
@@ -218,7 +220,9 @@ fun ConversationSidePaneScaffold(
             Layout(
                 modifier = Modifier.fillMaxSize(),
                 content = {
-                    ConversationPanePanel(
+                    if (paneContent != null) {
+                        paneContent(paneWidth)
+                    } else ConversationPanePanel(
                         state = state,
                         width = paneWidth,
                         listState = panelListState,

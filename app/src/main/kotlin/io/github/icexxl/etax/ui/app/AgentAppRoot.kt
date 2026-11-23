@@ -87,6 +87,7 @@ import io.github.icexxl.etax.channel.openclaw.OpenClawNotifier
 import io.github.icexxl.etax.channel.openclaw.OpenClawSettings
 import io.github.icexxl.etax.channel.openclaw.OpenClawSettingsScreen
 import io.github.icexxl.etax.channel.vscreen.VScreenSettingsScreen
+import io.github.icexxl.etax.channel.openclaw.OpenClawPanePanel
 import io.github.icexxl.etax.channel.openclaw.OpenClawHomeStore
 import io.github.icexxl.etax.ui.pages.providers.CommunityCatalogProviderScreen
 import io.github.icexxl.etax.ui.pages.providers.CommunityCatalogScreen
@@ -173,6 +174,11 @@ fun AgentAppRoot(
             settings = settings,
             notifier = OpenClawNotifier(context),
         )
+    }
+    // store 不在构造时自启：必须先绑定协程作用域，否则所有请求都会被静默丢弃。
+    LaunchedEffect(openClawStore, homeMode) {
+        openClawStore.attach(uiScope)
+        if (homeMode == HomeMode.OPENCLAW) openClawStore.start()
     }
     LaunchedEffect(openSpeechSettings) {
         if (openSpeechSettings) {
@@ -408,6 +414,27 @@ fun AgentAppRoot(
                 agentState.homeState.roleplay?.let { pushRoute(AppRoute.CharacterDetail(it.characterId)) }
             },
             homeModeOpenClaw = homeMode == HomeMode.OPENCLAW,
+            openClawPane = if (homeMode == HomeMode.OPENCLAW) {
+                { paneWidth: androidx.compose.ui.unit.Dp ->
+                    OpenClawPanePanel(
+                        store = openClawStore,
+                        width = paneWidth,
+                        onOpenSettings = { pushRoute(AppRoute.Settings) },
+                        onOpenModelProviders = { pushRoute(AppRoute.ModelProviders) },
+                        onOpenTools = { pushRoute(AppRoute.Tools) },
+                        onOpenSkills = { pushRoute(AppRoute.Skills) },
+                        onOpenCharacters = { pushRoute(AppRoute.Characters) },
+                        onOpenPermissions = { pushRoute(AppRoute.Permissions) },
+                        onHomeModeChange = { mode ->
+                            homeMode = mode
+                            homeModeStore.save(mode)
+                        },
+                        onSessionSelected = { conversationPaneOpen = false },
+                    )
+                }
+            } else {
+                null
+            },
             onToggleHomeMode = {
                 homeMode = if (homeMode == HomeMode.OPENCLAW) HomeMode.ETA else HomeMode.OPENCLAW
                 homeModeStore.save(homeMode)

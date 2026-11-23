@@ -153,6 +153,8 @@ internal fun AgentAppShell(
     homeCharacter: RoleplayChatUi? = null,
     homeModeOpenClaw: Boolean = false,
     onToggleHomeMode: () -> Unit = {},
+    /** OpenClaw 模式下替换侧栏内容；为 null 时用模型对话的会话列表。 */
+    openClawPane: (@Composable (androidx.compose.ui.unit.Dp) -> Unit)? = null,
     homeModelPickerState: AgentModelPickerUiState? = null,
     isHomeStreaming: Boolean = false,
     hasPermissionAttention: Boolean = false,
@@ -292,6 +294,7 @@ internal fun AgentAppShell(
     val shellContent: @Composable () -> Unit = {
         if (conversationPaneState != null && currentRoute is AppRoute.Home) {
             ConversationSidePaneScaffold(
+                paneContent = openClawPane,
                 state = conversationPaneState,
                 visible = isConversationPaneOpen,
                 backHandlerEnabled = isCurrentRoute,
