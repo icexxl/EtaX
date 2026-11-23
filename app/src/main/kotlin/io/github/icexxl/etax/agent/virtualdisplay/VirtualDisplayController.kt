@@ -71,8 +71,15 @@ internal object VirtualDisplayController {
     private var lastUiFrameAtElapsedMs: Long = 0L
     private val mutedPackages = linkedSetOf<String>()
 
+    /**
+     * 是否存在可用的建屏通道。
+     *
+     * 除了 root 与 LSPosed，还要算上 Stellar/Shizuku 的后台服务：
+     * 它同样能以 shell uid 创建受信任副屏，漏掉它会让所有 launch 判成
+     * backend_unavailable 并一律回落到物理主屏。
+     */
     fun isBackendAvailable(rootAvailable: Boolean, lsposedAvailable: Boolean): Boolean =
-        rootAvailable || lsposedAvailable
+        rootAvailable || lsposedAvailable || VScreenBackend.isReady()
 
     fun setStageExpanded(expanded: Boolean) {
         highFrequencyPreview = expanded
