@@ -7,7 +7,6 @@ import android.os.RemoteException
 import android.util.Log
 import com.stellar.server.IUserServiceCallback
 import roro.stellar.Stellar
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 private const val TAG = "StellarUserService"
@@ -28,7 +27,7 @@ object StellarUserService {
         val handler: Handler?,
         var token: String? = null,
         var binder: IBinder? = null,
-        var verificationToken: String = UUID.randomUUID().toString()
+        var verificationToken: String = stableVerificationToken(args)
     )
 
     @JvmStatic
@@ -153,6 +152,17 @@ object StellarUserService {
         }
     }
 
+    /**
+     * 稳定的验证令牌。
+     *
+     * 上游按每次绑定生成随机 UUID，但 Stellar 服务端会【复用】进程内已存在的
+     * 同名服务，并把创建时的令牌回传。App 进程重启后随机令牌必然与之不符，
+     * 表现为 "验证令牌不匹配，拒绝连接"，副屏就永远接不回来。
+     * 这里按类名与进程后缀派生固定值，使重连可以命中同一个服务实例。
+     */
+    private fun stableVerificationToken(args: UserServiceArgs): String =
+        "user-service:" + args.className + "@" + args.processNameSuffix
+
     private fun getConnectionKey(args: UserServiceArgs): String =
         "${args.className}:${args.processNameSuffix}"
 
@@ -185,8 +195,8 @@ object StellarUserService {
             override fun onServiceDisconnected() {
                 Log.i(TAG, "服务断开连接")
                 record.binder = null
-                record.verificationToken = UUID.randomUUID().toString()
-                Log.d(TAG, "已更换验证令牌")
+                // 令牌保持稳定：服务端会复用进程内已有的服务实例，
+                // 换新令牌会让下一次绑定必然被判为不匹配。
                 activeConnections.remove(key)
                 dispatchCallback(handler) {
                     record.callback.onServiceDisconnected()
