@@ -12,6 +12,9 @@ import androidx.compose.foundation.gestures.DraggableAnchors
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.anchoredDraggable
 import androidx.compose.foundation.gestures.animateTo
+import androidx.compose.foundation.systemGestureExclusion
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -215,6 +218,14 @@ fun ConversationSidePaneScaffold(
                 ),
             contentAlignment = AbsoluteAlignment.TopLeft,
         ) {
+            // 手势导航下系统会先吃掉左边缘滑动，导致侧栏无法打开。
+            // 在左边缘留一条窄的排除带，让拖动进入应用；其余区域的后退手势不受影响。
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(24.dp)
+                    .systemGestureExclusion(),
+            )
             // 两个槽位并排测量和放置，由同一位移推移；不在聊天内容下面叠放侧栏。
             // 侧栏保留组合，避免每次起手重新创建列表和搜索框。
             Layout(

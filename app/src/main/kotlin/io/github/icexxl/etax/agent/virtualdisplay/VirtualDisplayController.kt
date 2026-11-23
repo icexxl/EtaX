@@ -78,8 +78,11 @@ internal object VirtualDisplayController {
      * 它同样能以 shell uid 创建受信任副屏，漏掉它会让所有 launch 判成
      * backend_unavailable 并一律回落到物理主屏。
      */
-    fun isBackendAvailable(rootAvailable: Boolean, lsposedAvailable: Boolean): Boolean =
-        rootAvailable || lsposedAvailable || VScreenBackend.isReady()
+    fun isBackendAvailable(
+        rootAvailable: Boolean,
+        lsposedAvailable: Boolean,
+        daemonAvailable: Boolean = VScreenBackend.isReady(),
+    ): Boolean = rootAvailable || lsposedAvailable || daemonAvailable
 
     fun setStageExpanded(expanded: Boolean) {
         highFrequencyPreview = expanded

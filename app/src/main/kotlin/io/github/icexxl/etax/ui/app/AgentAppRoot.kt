@@ -439,7 +439,7 @@ fun AgentAppRoot(
                 null
             },
             openClawTitle = if (homeMode == HomeMode.OPENCLAW) {
-                { OpenClawTopBarAgentName(store = openClawStore) }
+                { OpenClawTopBarAgentName(store = openClawStore, onOpenPane = { conversationPaneOpen = true }) }
             } else {
                 null
             },

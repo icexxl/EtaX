@@ -57,17 +57,21 @@ import top.yukonga.miuix.kmp.window.WindowListPopup
 
 /** 左段：当前 agent 名。 */
 @Composable
-internal fun OpenClawTopBarAgentName(store: OpenClawHomeStore) {
+internal fun OpenClawTopBarAgentName(store: OpenClawHomeStore, onOpenPane: () -> Unit = {}) {
     val state by store.state.collectAsState()
     val name = state.agents.firstOrNull { it.id == state.currentAgentId }?.name
         ?.takeIf { it.isNotBlank() }
         ?: state.currentAgentId.ifBlank { "OpenClaw" }
+    // 手势导航会吃掉左边缘滑动，顶栏标题兼作打开侧栏的入口。
     Text(
         text = name,
         style = MiuixTheme.textStyles.headline1,
         color = MiuixTheme.colorScheme.onSurface,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .clickable(onClick = onOpenPane)
+            .padding(vertical = 4.dp, horizontal = 2.dp),
     )
 }
 
