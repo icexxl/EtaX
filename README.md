@@ -8,23 +8,23 @@
 ![Deep integrations for ColorOS and HyperOS](https://img.shields.io/badge/ROM%20Integrations-ColorOS%20%26%20HyperOS-1677FF)
 [![GPL-3.0 License](https://img.shields.io/github/license/icexxl/EtaX?color=1677FF)](LICENSE)
 
-> 本仓库为 [icexxl/EtaX](https://github.com/icexxl/EtaX)（`applicationId: io.github.icexxl.etax`），基于上游开源项目 [Mangi-11/Eta](https://github.com/Mangi-11/Eta) 深度定制维护，可与上游版本共存。在保留上游完整能力与署名的基础上，新增 **OpenClaw 远端渠道（SSE + FCM 推送唤醒）**、**免 Root 后台虚拟屏（Stellar）** 与模块化架构。上游仅作只读基线参考，本分支不向上游提交 PR、Issue 或补丁。
+> 本仓库为 [icexxl/EtaX](https://github.com/icexxl/EtaX)（`applicationId: io.github.icexxl.etax`，当前版本 **`v2.0.0`**），基于上游开源项目 [Mangi-11/Eta](https://github.com/Mangi-11/Eta) **`v4.0.0`** 正式版基线深度定制维护，可与上游版本共存。在保留上游完整能力与署名的基础上，新增 **OpenClaw 远端渠道（SSE + FCM 推送唤醒）**、**免 Root 后台虚拟屏（Stellar）** 与模块化架构。上游仅作只读基线参考，本分支不向上游提交 PR、Issue 或补丁。
 
 **大模型时代的 Android 系统级 AI 助手与移动设备 Agent。**
 
 **EtaX** 是面向手机与移动设备设计的 AI Agent，结合了 [Codex](https://openai.com/codex/) 这类 Coding Agent 的自主规划与执行能力，以及[豆包手机助手](https://o.doubao.com/)的跨应用 GUI 操作体验。
 
-## EtaX 专属增强（相对上游 Eta）
+## EtaX 专属增强（相对上游 Eta 4.0）
 
 - **OpenClaw 远端 Agent 渠道（`:openclaw-core`）**：
-  - 原生接入自建 OpenClaw Gateway，侧栏直达会话列表与三段式对话顶栏，支持流式思考过程与工具调用实时渲染、底部平滑跟随滚动。
+  - 原生接入自建 OpenClaw Gateway，侧栏直达会话列表与三段式对话顶栏，支持实时切换模型、思考强度与 `/` 斜杠指令补全，流式思考过程与工具调用实时渲染、底部平滑跟随滚动。
   - 传输层支持单连接 **SSE** 实时事件流、`ETag`/`304` 增量缓存、自动降级长轮询以及系统网络切换监听（`OpenClawNetworkMonitor`）秒级重连。
   - 支持 **Firebase Cloud Messaging（FCM）后台推送唤醒**与「后台休眠省电」开关：退后台或息屏断开长连接后仍可由服务端高优先级推送秒级唤醒通知（本地自行构建时放入 `app/google-services.json` 即可启用，缺失时自动跳过插件编译）。
 - **免 Root 后台虚拟屏（`:vscreen-core` + `:stellar-api`）**：
   - 接入 **Stellar**（Shizuku 兼容特权服务）托管 `shell` 权限用户服务，**无需 Root** 即可创建后台虚拟屏静默执行跨应用 GUI 任务，支持顶部胶囊微缩预览与一键移交主屏。
   - 系统提示词动态感知免 Root / Root / LSPosed 虚拟屏可用状态与当前权限边界，避免模型幻觉调用不可用工具。
-- **模块化架构与品牌统一**：
-  - 核心源码保留上游 `io.github.mangi.eta` 命名空间以降低上游同步冲突，将 OpenClaw 与免 Root 虚拟屏解耦为独立子模块；应用 ID（`io.github.icexxl.etax`）、默认提示词（支持旧配置无损迁移）与全端文案统一为 **EtaX**。
+- **同步上游 4.0.0 架构与 Miuix 玻璃态界面**：
+  - 完整合入上游 `v4.0.0` 重构基线：全面收口 **Miuix `0.9.5-rc01`** 玻璃态组件体系（玻璃抽屉、渐进模糊、`MiuixIcons.Glass` 图标）、精简设置页、角色会话自动生成标题、`AppContainer` 与 `ui/state` 架构拆层，并保持 `:openclaw-core` / `:vscreen-core` 独立模块化与全端 **EtaX** 品牌统一。
 
 ## 项目概览
 
@@ -37,7 +37,7 @@ EtaX 对标手机厂商预装的一方系统助手，围绕 Android 系统服务
 
 支持自备 **API Key（BYOK）** 及 **Codex（ChatGPT）/ Grok 订阅登录**，模型由你自由选择。支持 **Android 14+** 设备，不限品牌，基础功能免 Root；**Stellar 特权服务**可免 Root 解锁后台虚拟屏，Root 与 LSPosed 可进一步解锁深层个人上下文与系统入口增强。
 
-[下载 APK](https://github.com/icexxl/EtaX/releases) · [专属增强](#etax-专属增强相对上游-eta) · [使用场景](#你可以直接对-etax-说) · [核心能力](#核心能力) · [权限分层](#权限与设备支持) · [快速开始](#快速开始) · [为什么做 Eta](docs/WHY_ETA.md)
+[下载 APK](https://github.com/icexxl/EtaX/releases) · [专属增强](#etax-专属增强相对上游-eta-40) · [使用场景](#你可以直接对-etax-说) · [核心能力](#核心能力) · [权限分层](#权限与设备支持) · [快速开始](#快速开始) · [为什么做 Eta](docs/WHY_ETA.md)
 
 ## 你可以直接对 EtaX 说
 

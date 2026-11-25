@@ -8,23 +8,23 @@
 ![Deep integrations for ColorOS and HyperOS](https://img.shields.io/badge/ROM%20Integrations-ColorOS%20%26%20HyperOS-1677FF)
 [![GPL-3.0 License](https://img.shields.io/github/license/icexxl/EtaX?color=1677FF)](LICENSE)
 
-> This repository is [icexxl/EtaX](https://github.com/icexxl/EtaX) (`applicationId: io.github.icexxl.etax`), a customized fork of [Mangi-11/Eta](https://github.com/Mangi-11/Eta) that can install alongside upstream. While preserving upstream capabilities and attribution under GPL-3.0, EtaX adds an **OpenClaw remote channel (SSE + FCM push wake-up)**, a **rootless background virtual display (Stellar)**, and a modular codebase. Upstream is tracked read-only; no PRs, issues, or patches are sent upstream from this fork.
+> This repository is [icexxl/EtaX](https://github.com/icexxl/EtaX) (`applicationId: io.github.icexxl.etax`, currently **`v2.0.0`**), a customized fork built on upstream [Mangi-11/Eta](https://github.com/Mangi-11/Eta) **`v4.0.0`** that can install alongside upstream. While preserving upstream capabilities and attribution under GPL-3.0, EtaX adds an **OpenClaw remote channel (SSE + FCM push wake-up)**, a **rootless background virtual display (Stellar)**, and a modular codebase. Upstream is tracked read-only; no PRs, issues, or patches are sent upstream from this fork.
 
 **A system-level AI assistant and mobile agent for Android in the LLM era.**
 
 **EtaX** is an AI agent built for phones and mobile devices, combining the autonomous planning and execution of coding agents like [Codex](https://openai.com/codex/) with the cross-app GUI experience of [Doubao Phone Assistant](https://o.doubao.com/).
 
-## EtaX Fork Highlights
+## EtaX Fork Highlights (on Upstream Eta 4.0)
 
 - **OpenClaw Remote Agent Channel (`:openclaw-core`)**:
-  - Native integration with self-hosted OpenClaw Gateways, featuring a dedicated sidebar session panel, three-segment top bar, live streaming reasoning/tool-call rendering (`StreamingMarkdown`), and smooth bottom-follow scrolling.
+  - Native integration with self-hosted OpenClaw Gateways, featuring a dedicated sidebar session panel, three-segment top bar, live model/thinking-level switching, `/` slash-command completion, streaming reasoning/tool-call rendering (`StreamingMarkdown`), and smooth bottom-follow scrolling.
   - Single-connection **SSE** live event stream with `ETag`/`304` caching, automatic long-poll fallback, and network-change reconnect (`OpenClawNetworkMonitor`).
   - **Firebase Cloud Messaging (FCM) push wake-up** and a background sleep power-saving toggle: receive high-priority notifications even when the app is suspended or screen-off (place your own `app/google-services.json` when building locally; the plugin is skipped cleanly if absent).
 - **Rootless Background Virtual Display (`:vscreen-core` + `:stellar-api`)**:
   - Backed by **Stellar** (Shizuku-compatible privileged user service) running under `shell` permissions to operate a silent background virtual display **without Root**, complete with live top-capsule miniature preview and one-tap handoff to the main screen.
   - System prompts dynamically reflect rootless / Root / LSPosed virtual display availability and actual device tool boundaries.
-- **Modular Structure & Unified Branding**:
-  - Core app sources retain the upstream `io.github.mangi.eta` namespace to ease upstream syncs while decoupling OpenClaw and virtual display into standalone Gradle modules; package ID (`io.github.icexxl.etax`), default prompt (with lossless migration), and user-facing strings are unified as **EtaX**.
+- **Upstream 4.0.0 Architecture & Miuix Glass UI**:
+  - Fully synced with upstream `v4.0.0`: unified on **Miuix `0.9.5-rc01`** glass UI (glass drawers, progressive blur, `MiuixIcons.Glass`), streamlined Settings, auto-generated roleplay conversation titles, `AppContainer` & `ui/state` architecture, while keeping `:openclaw-core` / `:vscreen-core` decoupled and branding unified as **EtaX**.
 
 ## Overview
 
@@ -37,7 +37,7 @@ Benchmarked against built-in OEM system assistants, EtaX integrates deeply with 
 
 Bring your own **API key (BYOK)** or sign in with a **Codex (ChatGPT) / Grok subscription**—you choose the model. Requires **Android 14+** across phone brands, with core features available without root; **Stellar** unlocks the rootless background virtual display, while Root and LSPosed further unlock deep personal context and ROM entry points.
 
-[Download APK](https://github.com/icexxl/EtaX/releases) · [Fork Highlights](#etax-fork-highlights) · [Use Cases](#what-you-can-ask-etax) · [Capabilities](#core-capabilities) · [Permissions](#permissions--device-support) · [Getting Started](#getting-started) · [Why Eta Was Built](docs/WHY_ETA_EN.md)
+[Download APK](https://github.com/icexxl/EtaX/releases) · [Fork Highlights](#etax-fork-highlights-on-upstream-eta-40) · [Use Cases](#what-you-can-ask-etax) · [Capabilities](#core-capabilities) · [Permissions](#permissions--device-support) · [Getting Started](#getting-started) · [Why Eta Was Built](docs/WHY_ETA_EN.md)
 
 ## What You Can Ask EtaX
 
