@@ -7,7 +7,7 @@
   <string name="catalog_i18n_search_providers">搜索提供商</string>
   <string name="catalog_i18n_status_section">目录状态</string>
   <string name="catalog_i18n_community_title">models.dev 社区目录</string>
-  <string name="catalog_i18n_community_privacy">读取目录不会上传 Eta 的 API Key</string>
+  <string name="catalog_i18n_community_privacy">读取目录不会上传 EtaX 的 API Key</string>
   <string name="catalog_i18n_candidate_title">模型是社区候选条目</string>
   <string name="catalog_i18n_candidate_summary">能否调用以服务商账号权限和实际接口为准</string>
   <string name="catalog_i18n_loading_local">正在读取本地目录</string>

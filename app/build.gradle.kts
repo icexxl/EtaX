@@ -4,6 +4,9 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
 
 val releaseStoreFile = System.getenv("ETA_RELEASE_STORE_FILE")
 val releaseStorePassword = System.getenv("ETA_RELEASE_STORE_PASSWORD")
@@ -30,7 +33,7 @@ require(buildMetadata == null || buildMetadata.matches(Regex("[0-9A-Za-z.-]+")))
 val buildMetadataSuffix = buildMetadata?.let { "+$it" }.orEmpty()
 
 android {
-    namespace = "io.github.icexxl.etax"
+    namespace = "io.github.mangi.eta"
     compileSdk {
         version = release(37) {
             minorApiLevel = 2
@@ -43,8 +46,8 @@ android {
         minSdk = 34
         targetSdk = 37
         // EtaX 保持自己的单调版本序列，不采用上游日期版本号。
-        versionCode = 10070
-        versionName = "1.10.0"
+        versionCode = 10076
+        versionName = "1.10.6"
 
         ndk {
             // 同时过滤本地与依赖 AAR 的原生库，确保 APK 仅包含 ARM64。
@@ -193,6 +196,8 @@ dependencies {
     // 免 Root 虚拟屏的后台进程由 Stellar（Shizuku 分支）的 shell 用户 (uid 2000) 托管。
     // Stellar 官方发布物缺少 aidl/shared/userservice，故以本地模块内联其客户端源码。
     implementation(project(":stellar-api"))
+    implementation(project(":openclaw-core"))
+    implementation(project(":vscreen-core"))
 
     // DataStore：Provider / Model 结构化 JSON 与当前选中 ID 等键值
     implementation(libs.datastore.preferences)
@@ -205,6 +210,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.nimbus.jose.jwt)
     implementation(libs.okhttp.sse)
+    implementation(libs.firebase.messaging)
 
     // Kotlinx Serialization：Provider 设置与运行时配置 JSON
     implementation(libs.kotlinx.serialization.json)

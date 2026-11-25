@@ -766,10 +766,10 @@
     <string name="runtime_err_missing_input">Agent Runtime request is missing runId or user input</string>
     <string name="runtime_err_full_result_unavailable">Full run result is unavailable</string>
     <string name="runtime_err_read_image_failed">Agent Runtime could not read the image</string>
-    <string name="runtime_err_no_model_configured">Please configure an available model in Eta first</string>
+    <string name="runtime_err_no_model_configured">Please configure an available model in EtaX first</string>
     <string name="runtime_err_prepare_failed">Agent Runtime could not prepare the request</string>
     <string name="runtime_err_finished_recover">Task has finished; please restore the full result</string>
-    <string name="runtime_err_fgs_start_failed">Unable to start the background execution service; return to Eta and try again</string>
+    <string name="runtime_err_fgs_start_failed">Unable to start the background execution service; return to EtaX and try again</string>
     <string name="runtime_err_result_transfer_failed">Failed to transfer the full result. Saved history was not deleted; reopen the conversation to restore.</string>
     <string name="runtime_detail_gui_paused">Device control paused</string>
     <string name="runtime_err_rewrite_roleplay_only">Only character conversations can rewrite character replies</string>

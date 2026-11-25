@@ -104,8 +104,8 @@
   <string name="backup_err_checkpoint_missing_conversation">备份中的上下文检查点缺少所属会话</string>
   <string name="backup_err_duplicate_checkpoint">备份中的上下文检查点重复</string>
   <string name="backup_err_invalid_records_or_characters">备份中的记录或角色数据无效</string>
-  <string name="backup_err_not_eta_backup">这不是 Eta 备份文件</string>
-  <string name="backup_err_unsupported_version">不支持的 Eta 备份版本：%1$d</string>
+  <string name="backup_err_not_eta_backup">这不是 EtaX 备份文件</string>
+  <string name="backup_err_unsupported_version">不支持的 EtaX 备份版本：%1$d</string>
   <string name="backup_err_invalid_catalog_revision">备份中的模型目录版本无效</string>
   <string name="backup_err_invalid_provider_id">备份中的模型提供商存在重复或无效 ID</string>
   <string name="backup_err_unsupported_provider_auth">备份中的服务商认证方式不受支持</string>
@@ -158,7 +158,7 @@
   <string name="repo_err_provider_connection_changed">服务商连接已变更，请重新拉取模型</string>
   <string name="repo_err_oauth_session_changed_refetch">登录状态已变更，请重新拉取模型</string>
   <string name="repo_err_apikey_catalog_no_account_binding">API Key 模型目录不能携带账号绑定</string>
-  <string name="repo_err_auth_service_not_ready">登录服务尚未就绪，请重新打开 Eta</string>
+  <string name="repo_err_auth_service_not_ready">登录服务尚未就绪，请重新打开 EtaX</string>
   <string name="repo_err_provider_copy_name">%1$s 副本</string>
   <string name="repo_err_connection_test_cancelled">连接测试已取消</string>
   <string name="repo_err_oauth_account_changed_refetch">登录账号已变更，请重新拉取模型</string>

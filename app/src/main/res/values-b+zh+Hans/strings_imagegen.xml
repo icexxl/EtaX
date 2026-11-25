@@ -144,7 +144,7 @@
     </plurals>
     <string name="imagegen_gallery_nothing_to_clear">没有可清理的图片</string>
     <string name="imagegen_gallery_empty_title">还没有生成的图片</string>
-    <string name="imagegen_gallery_empty_summary">开启 AI 生图后，在聊天里让 Eta 画图即可自动保存到这里</string>
+    <string name="imagegen_gallery_empty_summary">开启 AI 生图后，在聊天里让 EtaX 画图即可自动保存到这里</string>
     <plurals name="imagegen_gallery_header_summary">
         <item quantity="other">共 %1$d 张 · 占用 %2$s（点击大图可保存或分享）</item>
     </plurals>

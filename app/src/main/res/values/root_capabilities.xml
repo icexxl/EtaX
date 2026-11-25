@@ -15,13 +15,13 @@
     <string name="capability_root_partial">Using standard capabilities; Root enables additional actions</string>
     <string name="capability_accessibility_required">Available after enabling accessibility</string>
     <string name="capability_xposed_service">Framework connection</string>
-    <string name="capability_xposed_connected">Service connected; this does not indicate that the Eta module is enabled</string>
+    <string name="capability_xposed_connected">Service connected; this does not indicate that the EtaX module is enabled</string>
     <string name="capability_xposed_disconnected">No framework service connection; chat, GUI, browser, and standard Linux environments remain available</string>
     <string name="capability_xposed_help">Module activation and scope</string>
     <string name="capability_root_features">Root capabilities</string>
     <string name="capability_system_features">System assistant and enhancements</string>
     <string name="capability_root_device">App and system management</string>
-    <string name="capability_root_device_summary">Freeze and stop apps, modify protected system settings, and read system logs. Eta requires Root access.</string>
+    <string name="capability_root_device_summary">Freeze and stop apps, modify protected system settings, and read system logs. EtaX requires Root access.</string>
     <string name="capability_root_data">Protected data and files</string>
     <string name="capability_root_data_summary">Access some data saved by other apps and the system. Requires Root; availability depends on the system, app versions, and enabled tool permissions.</string>
     <string name="capability_root_linux">Linux and terminal enhancements</string>
@@ -56,9 +56,9 @@
     <string name="capability_workspace_failed">File operation failed. Check permissions and available space.</string>
     <string name="capability_notifications_title">Background task notifications</string>
     <string name="capability_notifications_summary">View and stop running terminal and Agent tasks from notifications</string>
-    <string name="capability_background_failed">Cannot start the background task. Return to Eta and try again.</string>
+    <string name="capability_background_failed">Cannot start the background task. Return to EtaX and try again.</string>
     <string name="capability_location_foreground">Location is available while the app is in the foreground; background tasks require additional location authorization</string>
-    <string name="capability_xposed_help_summary">Enable Eta in LSPosed and check its scope. A service connection does not indicate that the module is enabled and may remain after disabling it. Actual behavior depends on hooks loading in the target process.</string>
+    <string name="capability_xposed_help_summary">Enable EtaX in LSPosed and check its scope. A service connection does not indicate that the module is enabled and may remain after disabling it. Actual behavior depends on hooks loading in the target process.</string>
     <string name="capability_terminal_ordinary_summary">Run commands and background tasks using standard Android Shell or a Linux environment without Root</string>
     <string name="capability_notification_access_required">Notification access required</string>
     <string name="capability_usage_access_required">Usage access required</string>

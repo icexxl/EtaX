@@ -2,7 +2,7 @@
 <resources>
     <!-- List screen & health banner -->
     <string name="scheduled_section_quick_start">Quick start</string>
-    <string name="scheduled_empty_hint">Scheduled tasks run silently in the background and only notify you when there is something worth your attention. You can also tell Eta directly in chat, e.g. \"Summarize today\'s important notifications every night at 10 PM.\"</string>
+    <string name="scheduled_empty_hint">Scheduled tasks run silently in the background and only notify you when there is something worth your attention. You can also tell EtaX directly in chat, e.g. \"Summarize today\'s important notifications every night at 10 PM.\"</string>
     <string name="scheduled_section_all_tasks">All tasks · %1$d/%2$d enabled</string>
     <string name="scheduled_unnamed_task">Untitled task</string>
     <string name="scheduled_meta_next_run">Next %1$s</string>
@@ -77,7 +77,7 @@
     <string name="scheduled_cap_terminal_title">Terminal, files &amp; Linux</string>
     <string name="scheduled_cap_terminal_summary">Run Android/Linux commands and read or write workspace files</string>
     <string name="scheduled_cap_mcp_title">MCP remote tools</string>
-    <string name="scheduled_cap_mcp_summary">Call MCP server tools enabled in Eta</string>
+    <string name="scheduled_cap_mcp_summary">Call MCP server tools enabled in EtaX</string>
     <string name="scheduled_cap_gui_title">App UI automation (GUI)</string>
     <string name="scheduled_cap_gui_summary">Off by default; runs silently on a virtual display when supported, otherwise sends a reminder to run after unlock</string>
 
@@ -86,7 +86,7 @@
     <string name="scheduled_editor_name_label">Task name</string>
     <string name="scheduled_editor_name_placeholder">e.g. Daily evening briefing</string>
     <string name="scheduled_editor_name_label_with_example">Task name (e.g. Daily evening briefing)</string>
-    <string name="scheduled_editor_prompt_label">What should Eta do</string>
+    <string name="scheduled_editor_prompt_label">What should EtaX do</string>
     <string name="scheduled_editor_prompt_placeholder">Describe the goal, data sources, and expected output format in natural language</string>
     <string name="scheduled_editor_section_schedule">Schedule</string>
     <string name="scheduled_editor_trigger_time">Trigger time</string>

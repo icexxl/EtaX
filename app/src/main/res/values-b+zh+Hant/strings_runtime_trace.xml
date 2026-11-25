@@ -707,10 +707,10 @@
     <string name="runtime_err_missing_input">Agent Runtime 請求缺少 runId 或使用者輸入</string>
     <string name="runtime_err_full_result_unavailable">完整執行結果不可用</string>
     <string name="runtime_err_read_image_failed">Agent Runtime 無法讀取圖片</string>
-    <string name="runtime_err_no_model_configured">請先在 Eta 中設定可用的模型</string>
+    <string name="runtime_err_no_model_configured">請先在 EtaX 中設定可用的模型</string>
     <string name="runtime_err_prepare_failed">Agent Runtime 無法準備請求</string>
     <string name="runtime_err_finished_recover">任務已結束，請還原完整結果</string>
-    <string name="runtime_err_fgs_start_failed">無法啟動背景執行服務，請返回 Eta 後重試</string>
+    <string name="runtime_err_fgs_start_failed">無法啟動背景執行服務，請返回 EtaX 後重試</string>
     <string name="runtime_err_result_transfer_failed">完整結果傳輸失敗，已儲存的記錄未刪除。請重新開啟對話以還原。</string>
     <string name="runtime_detail_gui_paused">手機操作已暫停</string>
     <string name="runtime_err_rewrite_roleplay_only">僅角色對話可改寫角色回覆</string>

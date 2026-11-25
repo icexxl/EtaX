@@ -11,7 +11,7 @@
     <string name="provider_url_vertex_gemini4_only">Vertex AI chat only supports Gemini 4 series models.</string>
 
     <string name="provider_err_vertex_thinking_unsupported">The current Vertex AI model does not support the selected reasoning effort. Choose Default or a supported effort.</string>
-    <string name="provider_err_vertex_tool_call_id_missing">Vertex AI tool call is missing an Eta call ID.</string>
+    <string name="provider_err_vertex_tool_call_id_missing">Vertex AI tool call is missing an EtaX call ID.</string>
     <string name="provider_err_vertex_input_type_unsupported">Vertex AI Gemini does not support this input content type.</string>
     <string name="provider_err_gemini_image_source">Gemini image input must be a Base64 image or an accessible image URL.</string>
     <string name="provider_err_gemini_image_http_source">Gemini image input must be a Base64 image or an HTTP URL.</string>

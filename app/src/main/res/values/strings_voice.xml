@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Assistant foreground service & overlay suggestions -->
-    <string name="voice_i18n_fg_listening">Eta is listening</string>
-    <string name="voice_i18n_fg_speaking">Eta is reading aloud</string>
+    <string name="voice_i18n_fg_listening">EtaX is listening</string>
+    <string name="voice_i18n_fg_speaking">EtaX is reading aloud</string>
     <string name="voice_i18n_fg_channel_name">Assistant voice</string>
     <string name="voice_i18n_fg_content_text">Active only while the assistant overlay is visible</string>
     <string name="voice_i18n_fg_action_stop">Stop</string>
@@ -28,7 +28,7 @@
 
     <!-- General speech errors, permissions, audio & network -->
     <string name="voice_i18n_credentials_decrypt_failed">Unable to decrypt speech credentials. Please re-enter and save them.</string>
-    <string name="voice_i18n_mic_permission_required">Please allow Eta to use the microphone</string>
+    <string name="voice_i18n_mic_permission_required">Please allow EtaX to use the microphone</string>
     <string name="voice_i18n_service_timeout">Speech service timed out. Please try again.</string>
     <string name="voice_i18n_network_unavailable">Unable to connect to the speech service. Check your network.</string>
     <string name="voice_i18n_service_unreadable_data">The speech service returned unreadable data</string>
@@ -67,7 +67,7 @@
     <string name="voice_i18n_config_oss_bucket_prefix_invalid">Check your OSS bucket name and directory prefix</string>
     <string name="voice_i18n_config_base_url_invalid">Base URL must be an HTTPS URL without credentials or query parameters</string>
     <string name="voice_i18n_oss_endpoint_invalid">OSS endpoint must be a standard regional domain without a path or port</string>
-    <string name="voice_i18n_oss_pending_cleanup_limit">Too many recordings are pending cleanup. Check OSS delete permissions and restart Eta.</string>
+    <string name="voice_i18n_oss_pending_cleanup_limit">Too many recordings are pending cleanup. Check OSS delete permissions and restart EtaX.</string>
     <string name="voice_i18n_oss_cleanup_record_failed">Unable to record recording cleanup info</string>
 
     <!-- Configuration field labels -->

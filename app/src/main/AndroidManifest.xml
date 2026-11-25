@@ -76,10 +76,6 @@
             android:theme="@style/Theme.Eta"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="*/*" />
@@ -90,6 +86,18 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+
+        <!-- 保持 1.10.2 及之前版本的桌面启动入口组件名兼容，避免覆盖安装丢失图标 -->
+        <activity-alias
+            android:name="io.github.icexxl.etax.ui.MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:targetActivity=".ui.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <activity
             android:name=".ui.screens.browser.AgentBrowserActivity"
@@ -129,6 +137,14 @@
             android:name=".agent.voice.EtaVoiceInteractionSessionService"
             android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
+
+        <service
+            android:name="io.github.icexxl.etax.channel.openclaw.OpenClawFcmService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
 
         <service
             android:name=".agent.voice.EtaRecognitionService"

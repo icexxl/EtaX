@@ -7,7 +7,7 @@
   <string name="catalog_i18n_search_providers">搜尋供應商</string>
   <string name="catalog_i18n_status_section">目錄狀態</string>
   <string name="catalog_i18n_community_title">models.dev 社群目錄</string>
-  <string name="catalog_i18n_community_privacy">讀取目錄不會上傳 Eta 的 API Key</string>
+  <string name="catalog_i18n_community_privacy">讀取目錄不會上傳 EtaX 的 API Key</string>
   <string name="catalog_i18n_candidate_title">模型為社群候選條目</string>
   <string name="catalog_i18n_candidate_summary">能否呼叫以供應商帳號權限與實際介面為準</string>
   <string name="catalog_i18n_loading_local">正在讀取本機目錄</string>

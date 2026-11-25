@@ -11,7 +11,7 @@
     <string name="provider_url_vertex_gemini4_only">Vertex AI 對話僅支援 Gemini 4 系列模型。</string>
 
     <string name="provider_err_vertex_thinking_unsupported">目前 Vertex AI 模型不支援所選思考檔位，請使用 Default 或模型支援的檔位。</string>
-    <string name="provider_err_vertex_tool_call_id_missing">Vertex AI 工具呼叫缺少 Eta 呼叫識別碼。</string>
+    <string name="provider_err_vertex_tool_call_id_missing">Vertex AI 工具呼叫缺少 EtaX 呼叫識別碼。</string>
     <string name="provider_err_vertex_input_type_unsupported">Vertex AI Gemini 不支援此輸入內容類型。</string>
     <string name="provider_err_gemini_image_source">Gemini 圖片輸入必須為 Base64 圖片或可存取的圖片位址。</string>
     <string name="provider_err_gemini_image_http_source">Gemini 圖片輸入必須為 Base64 圖片或 HTTP 位址。</string>

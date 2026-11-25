@@ -2,7 +2,7 @@
 <resources>
     <!-- 清單頁與健康檢查 -->
     <string name="scheduled_section_quick_start">快速開始</string>
-    <string name="scheduled_empty_hint">排程任務會在背景靜默執行，只在有需要你關注的結果時通知；你也可以直接在對話中對 Eta 說「每天晚上十點幫我總結今天的重要通知」。</string>
+    <string name="scheduled_empty_hint">排程任務會在背景靜默執行，只在有需要你關注的結果時通知；你也可以直接在對話中對 EtaX 說「每天晚上十點幫我總結今天的重要通知」。</string>
     <string name="scheduled_section_all_tasks">全部任務 · %1$d/%2$d 已開啟</string>
     <string name="scheduled_unnamed_task">未命名任務</string>
     <string name="scheduled_meta_next_run">下次 %1$s</string>
@@ -77,7 +77,7 @@
     <string name="scheduled_cap_terminal_title">終端機、檔案與 Linux</string>
     <string name="scheduled_cap_terminal_summary">執行 Android/Linux 指令與工作區檔案讀寫</string>
     <string name="scheduled_cap_mcp_title">MCP 遠端工具</string>
-    <string name="scheduled_cap_mcp_summary">呼叫已在 Eta 中啟用的 MCP 伺服器工具</string>
+    <string name="scheduled_cap_mcp_summary">呼叫已在 EtaX 中啟用的 MCP 伺服器工具</string>
     <string name="scheduled_cap_gui_title">應用程式介面操作（GUI）</string>
     <string name="scheduled_cap_gui_summary">預設關閉；支援背景虛擬螢幕的裝置優先靜默執行，否則鎖定螢幕時發送提醒待解鎖</string>
 
@@ -86,7 +86,7 @@
     <string name="scheduled_editor_name_label">任務名稱</string>
     <string name="scheduled_editor_name_placeholder">例如：每日晚間簡報</string>
     <string name="scheduled_editor_name_label_with_example">任務名稱（如：每日晚間簡報）</string>
-    <string name="scheduled_editor_prompt_label">要 Eta 做什麼</string>
+    <string name="scheduled_editor_prompt_label">要 EtaX 做什麼</string>
     <string name="scheduled_editor_prompt_placeholder">用自然語言描述目標、資料來源與預期輸出格式</string>
     <string name="scheduled_editor_section_schedule">執行時間</string>
     <string name="scheduled_editor_trigger_time">觸發時間</string>

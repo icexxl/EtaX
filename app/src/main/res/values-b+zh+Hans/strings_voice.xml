@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Assistant foreground service & overlay suggestions -->
-    <string name="voice_i18n_fg_listening">Eta 正在聆听</string>
-    <string name="voice_i18n_fg_speaking">Eta 正在朗读</string>
+    <string name="voice_i18n_fg_listening">EtaX 正在聆听</string>
+    <string name="voice_i18n_fg_speaking">EtaX 正在朗读</string>
     <string name="voice_i18n_fg_channel_name">助手语音</string>
     <string name="voice_i18n_fg_content_text">仅在助手浮窗可见时运行</string>
     <string name="voice_i18n_fg_action_stop">停止</string>
@@ -28,7 +28,7 @@
 
     <!-- General speech errors, permissions, audio & network -->
     <string name="voice_i18n_credentials_decrypt_failed">语音凭据无法解密，请重新填写并保存</string>
-    <string name="voice_i18n_mic_permission_required">请允许 Eta 使用麦克风</string>
+    <string name="voice_i18n_mic_permission_required">请允许 EtaX 使用麦克风</string>
     <string name="voice_i18n_service_timeout">语音服务响应超时，请重试</string>
     <string name="voice_i18n_network_unavailable">无法连接语音服务，请检查网络</string>
     <string name="voice_i18n_service_unreadable_data">语音服务返回了无法处理的数据</string>
@@ -67,7 +67,7 @@
     <string name="voice_i18n_config_oss_bucket_prefix_invalid">请检查 OSS Bucket 和目录前缀</string>
     <string name="voice_i18n_config_base_url_invalid">服务地址须为不含认证信息和查询参数的 HTTPS 地址</string>
     <string name="voice_i18n_oss_endpoint_invalid">OSS Endpoint 须为标准地域域名，不包含路径或端口</string>
-    <string name="voice_i18n_oss_pending_cleanup_limit">待清理录音较多，请检查 OSS 删除权限后重启 Eta</string>
+    <string name="voice_i18n_oss_pending_cleanup_limit">待清理录音较多，请检查 OSS 删除权限后重启 EtaX</string>
     <string name="voice_i18n_oss_cleanup_record_failed">无法记录录音清理信息</string>
 
     <!-- Configuration field labels -->

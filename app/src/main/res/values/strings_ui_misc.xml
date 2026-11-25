@@ -7,7 +7,7 @@
   <string name="catalog_i18n_search_providers">Search providers</string>
   <string name="catalog_i18n_status_section">Catalog status</string>
   <string name="catalog_i18n_community_title">models.dev community catalog</string>
-  <string name="catalog_i18n_community_privacy">Reading the catalog never uploads your Eta API keys</string>
+  <string name="catalog_i18n_community_privacy">Reading the catalog never uploads your EtaX API keys</string>
   <string name="catalog_i18n_candidate_title">Community candidate entries</string>
   <string name="catalog_i18n_candidate_summary">Availability depends on your provider account permissions and live API</string>
   <string name="catalog_i18n_loading_local">Reading local catalog</string>

@@ -147,7 +147,7 @@
     </plurals>
     <string name="imagegen_gallery_nothing_to_clear">No images to clear</string>
     <string name="imagegen_gallery_empty_title">No generated images yet</string>
-    <string name="imagegen_gallery_empty_summary">Enable AI image generation and ask Eta to draw in chat to automatically save images here.</string>
+    <string name="imagegen_gallery_empty_summary">Enable AI image generation and ask EtaX to draw in chat to automatically save images here.</string>
     <plurals name="imagegen_gallery_header_summary">
         <item quantity="one">%1$d image · %2$s used (tap to view, save, or share)</item>
         <item quantity="other">%1$d images · %2$s used (tap to view, save, or share)</item>

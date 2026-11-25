@@ -104,8 +104,8 @@
   <string name="backup_err_checkpoint_missing_conversation">A context checkpoint in the backup references a missing conversation</string>
   <string name="backup_err_duplicate_checkpoint">Backup contains duplicate context checkpoints</string>
   <string name="backup_err_invalid_records_or_characters">Backup contains invalid records or character data</string>
-  <string name="backup_err_not_eta_backup">This is not an Eta backup file</string>
-  <string name="backup_err_unsupported_version">Unsupported Eta backup version: %1$d</string>
+  <string name="backup_err_not_eta_backup">This is not an EtaX backup file</string>
+  <string name="backup_err_unsupported_version">Unsupported EtaX backup version: %1$d</string>
   <string name="backup_err_invalid_catalog_revision">Invalid model catalog version in backup</string>
   <string name="backup_err_invalid_provider_id">Backup contains duplicate or invalid provider IDs</string>
   <string name="backup_err_unsupported_provider_auth">Backup contains an unsupported provider authentication mode</string>
@@ -158,7 +158,7 @@
   <string name="repo_err_provider_connection_changed">Provider connection has changed; please fetch models again</string>
   <string name="repo_err_oauth_session_changed_refetch">Sign-in status has changed; please fetch models again</string>
   <string name="repo_err_apikey_catalog_no_account_binding">API Key model catalog cannot include an account binding</string>
-  <string name="repo_err_auth_service_not_ready">Sign-in service is not ready yet; please reopen Eta</string>
+  <string name="repo_err_auth_service_not_ready">Sign-in service is not ready yet; please reopen EtaX</string>
   <string name="repo_err_provider_copy_name">%1$s Copy</string>
   <string name="repo_err_connection_test_cancelled">Connection test cancelled</string>
   <string name="repo_err_oauth_account_changed_refetch">Signed-in account has changed; please fetch models again</string>
