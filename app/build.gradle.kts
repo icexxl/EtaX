@@ -4,6 +4,9 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
 
 val releaseStoreFile = System.getenv("ETA_RELEASE_STORE_FILE")
 val releaseStorePassword = System.getenv("ETA_RELEASE_STORE_PASSWORD")
@@ -30,17 +33,21 @@ require(buildMetadata == null || buildMetadata.matches(Regex("[0-9A-Za-z.-]+")))
 val buildMetadataSuffix = buildMetadata?.let { "+$it" }.orEmpty()
 
 android {
-    namespace = "io.github.icexxl.etax"
-    compileSdk = 37
+    namespace = "io.github.mangi.eta"
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
     ndkVersion = libs.versions.ndk.get()
 
     defaultConfig {
         applicationId = "io.github.icexxl.etax"
-        minSdk = 33
+        minSdk = 34
         targetSdk = 37
         // EtaX 保持自己的单调版本序列，不采用上游日期版本号。
-        versionCode = 10036
-        versionName = "1.7.1"
+        versionCode = 10076
+        versionName = "1.10.6"
 
         ndk {
             // 同时过滤本地与依赖 AAR 的原生库，确保 APK 仅包含 ARM64。
@@ -68,6 +75,8 @@ android {
         }
         release {
             versionNameSuffix = buildMetadataSuffix
+            // 有 ETA_RELEASE_* 环境变量才签名；缺失时产出未签名包，
+            // 避免本地/无凭据环境直接在构建期失败。发布前必须确认已签名。
             signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
@@ -157,9 +166,21 @@ dependencies {
     // Hook 侧用 XposedInterface.getRemotePreferences 读取当前进程持有的配置缓存。
     implementation(libs.libxposed.service)
     implementation(libs.dexkit)
-    implementation(libs.coui)
+    constraints {
+        // 延续旧依赖图中两套 UI 共用的窗口尺寸和 Android 兼容组件版本。
+        implementation(libs.androidx.compose.window.size)
+        implementation(libs.androidx.core.ktx)
+    }
+    implementation(libs.coui.ui)
+    implementation(libs.coui.preference)
+    implementation(libs.coui.icons)
+    implementation(libs.coui.blur)
+    implementation(libs.coui.squircle)
     implementation(libs.miuix.ui)
     implementation(libs.miuix.blur)
+    implementation(libs.miuix.glass)
+    implementation(libs.miuix.glass.icons)
+    implementation(libs.miuix.material)
     implementation(libs.miuix.nav)
     implementation(libs.miuix.preference)
     implementation(libs.material.icons.extended)
@@ -169,10 +190,14 @@ dependencies {
     implementation(libs.activity.compose)
     // 只使用 GFM 解析器；聊天渲染层由 ui/markdown 自建，按块冻结并接入逐字显现。
     implementation(libs.intellij.markdown)
+    implementation(libs.ratex.android)
     implementation(libs.hidden.api.bypass)
-    // Agent-VScreen's daemon backend: Shizuku owns the privileged process lifecycle.
-    implementation("dev.rikka.shizuku:api:13.1.5")
-    implementation("dev.rikka.shizuku:provider:13.1.5")
+
+    // 免 Root 虚拟屏的后台进程由 Stellar（Shizuku 分支）的 shell 用户 (uid 2000) 托管。
+    // Stellar 官方发布物缺少 aidl/shared/userservice，故以本地模块内联其客户端源码。
+    implementation(project(":stellar-api"))
+    implementation(project(":openclaw-core"))
+    implementation(project(":vscreen-core"))
 
     // DataStore：Provider / Model 结构化 JSON 与当前选中 ID 等键值
     implementation(libs.datastore.preferences)
@@ -185,6 +210,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.nimbus.jose.jwt)
     implementation(libs.okhttp.sse)
+    implementation(libs.firebase.messaging)
 
     // Kotlinx Serialization：Provider 设置与运行时配置 JSON
     implementation(libs.kotlinx.serialization.json)

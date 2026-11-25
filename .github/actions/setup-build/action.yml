@@ -1,5 +1,5 @@
-name: 配置 EtaX 构建环境
-description: 安装 JDK、Gradle 与 Android SDK，供 PR Check 和 EtaX Build 共用
+name: 配置 Eta 构建环境
+description: 安装 JDK、Gradle 与 Android SDK，供 PR Check 和 Eta Build 共用
 
 runs:
   using: composite
@@ -22,6 +22,6 @@ runs:
         packages: ""
         log-accepted-android-sdk-licenses: false
 
-    - name: 安装 Android SDK 37
+    - name: 安装 Android SDK 37.2
       shell: bash
-      run: sdkmanager --channel=3 "platforms;android-37.0"
+      run: sdkmanager --channel=3 "platforms;android-37.2"

@@ -22,5 +22,8 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "EtaX"
+rootProject.name = "Eta"
 include(":app")
+include(":stellar-api")
+include(":openclaw-core")
+include(":vscreen-core")

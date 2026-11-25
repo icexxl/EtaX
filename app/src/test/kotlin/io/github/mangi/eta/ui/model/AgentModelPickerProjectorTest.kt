@@ -1,0 +1,408 @@
+package io.github.mangi.eta.ui.model
+
+import io.github.mangi.eta.data.model.CustomProviderSetting
+import io.github.mangi.eta.data.model.Model
+import io.github.mangi.eta.data.model.ProviderAuthModes
+import io.github.mangi.eta.data.model.ProviderSourceTypes
+import io.github.mangi.eta.data.model.enabledModel
+import io.github.mangi.eta.ui.components.formatCacheHitPercent
+import io.github.mangi.eta.ui.components.formatStatDuration
+import io.github.mangi.eta.ui.components.formatTokensPerSecond
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class AgentModelPickerProjectorTest {
+    @Test
+    fun project_keepsOnlyEnabledProvidersAndModelsAndResolvesSelection() {
+        val selected = model(id = "model-selected", displayName = "GPT 5.6", contextWindowOverride = 1_050_000)
+        val providers = listOf(
+            provider(
+                id = "disabled-provider",
+                name = "Disabled",
+                enabled = false,
+                models = listOf(model(id = "hidden-provider-model")),
+            ),
+            provider(
+                id = "no-enabled-models",
+                name = "No enabled models",
+                models = listOf(model(id = "disabled-only-model", enabled = false)),
+            ),
+            provider(
+                id = "openai",
+                name = "OpenAI",
+                sourceType = ProviderSourceTypes.OPENAI,
+                models = listOf(
+                    model(id = "disabled-model", enabled = false),
+                    selected,
+                ),
+            ),
+        )
+
+        val result = AgentModelPickerProjector.project(
+            providers = providers,
+            selectedProviderId = "openai",
+            selectedModelId = selected.id,
+        )
+
+        assertEquals(listOf("openai"), result.providerGroups.map { it.providerId })
+        assertEquals(listOf(selected.id), result.providerGroups.single().models.map { it.id })
+        assertEquals(selected.id, result.selectedModel?.id)
+        assertEquals(1_050_000, result.selectedModel?.contextWindow)
+    }
+
+    @Test
+    fun project_hidesProvidersWithoutApiKeyButPreservesCurrentSelection() {
+        val selected = model(id = "selected", displayName = "Selected")
+        val result = AgentModelPickerProjector.project(
+            providers = listOf(
+                provider(
+                    id = "missing-key",
+                    apiKey = "   ",
+                    models = listOf(selected),
+                ),
+                provider(
+                    id = "configured",
+                    models = listOf(model(id = "available")),
+                ),
+            ),
+            selectedProviderId = "missing-key",
+            selectedModelId = selected.id,
+        )
+
+        assertEquals(listOf("configured"), result.providerGroups.map { it.providerId })
+        assertEquals(selected.id, result.selectedModel?.id)
+        assertEquals("missing-key", result.selectedModel?.providerId)
+    }
+
+    @Test
+    fun project_showsBothOAuthProvidersWithoutApiKeys() {
+        val providers = listOf(
+            provider(
+                id = "chatgpt",
+                apiKey = "",
+                authMode = ProviderAuthModes.OPENAI_CHATGPT,
+                models = listOf(model("chatgpt-model")),
+            ),
+            provider(
+                id = "grok",
+                apiKey = "",
+                authMode = ProviderAuthModes.XAI_GROK,
+                models = listOf(model("grok-model")),
+            ),
+        )
+
+        val result = AgentModelPickerProjector.project(providers, "grok", "grok-model")
+
+        assertEquals(listOf("chatgpt", "grok"), result.providerGroups.map { it.providerId })
+        assertEquals(listOf("chatgpt-model", "grok-model"), result.providerGroups.flatMap { it.models }.map { it.id })
+        assertEquals("grok-model", result.selectedModel?.id)
+    }
+
+    @Test
+    fun project_doesNotTreatUnknownAuthModesAsConfiguredApiKeys() {
+        val result = AgentModelPickerProjector.project(
+            providers = listOf(provider("unknown", authMode = "unsupported", models = listOf(model("model")))),
+            selectedProviderId = null,
+            selectedModelId = null,
+        )
+
+        assertEquals(emptyList<AgentModelProviderGroupUi>(), result.providerGroups)
+    }
+
+    @Test
+    fun filterGroups_matchesModelNamesIdsAndProviderNames() {
+        fun option(id: String, providerId: String, providerName: String, displayName: String) =
+            AgentModelOptionUi(
+                id = id,
+                providerId = providerId,
+                providerName = providerName,
+                providerSourceType = ProviderSourceTypes.CUSTOM,
+                modelId = id,
+                displayName = displayName,
+                contextWindow = null,
+            )
+        val state = AgentModelPickerUiState(
+            providerGroups = listOf(
+                AgentModelProviderGroupUi(
+                    providerId = "deepseek",
+                    providerName = "DeepSeek",
+                    providerSourceType = ProviderSourceTypes.CUSTOM,
+                    models = listOf(
+                        option("deepseek-v4.1-flash", "deepseek", "DeepSeek", "DeepSeek V4.1 Flash"),
+                        option("deepseek-r2", "deepseek", "DeepSeek", "DeepSeek R2"),
+                    ),
+                ),
+                AgentModelProviderGroupUi(
+                    providerId = "zhipu",
+                    providerName = "智谱",
+                    providerSourceType = ProviderSourceTypes.CUSTOM,
+                    models = listOf(option("glm-5", "zhipu", "智谱", "GLM-5")),
+                ),
+            ),
+        )
+
+        assertEquals(state.providerGroups, state.filterGroups("  "))
+        assertEquals(
+            listOf("deepseek-v4.1-flash"),
+            state.filterGroups("v4flash").flatMap { it.models }.map { it.id },
+        )
+        assertEquals(listOf("glm-5"), state.filterGroups("智谱").flatMap { it.models }.map { it.id })
+        assertEquals(
+            listOf("deepseek-r2"),
+            state.filterGroups("deepseek r2").flatMap { it.models }.map { it.id },
+        )
+        assertEquals(emptyList<AgentModelProviderGroupUi>(), state.filterGroups("claude"))
+        assertEquals(3, state.modelCount)
+    }
+
+    @Test
+    fun latestContextUsage_usesLastMeasuredRoundAndSelectedWindow() {
+        val selected = AgentModelOptionUi(
+            id = "model",
+            providerId = "provider",
+            providerName = "Provider",
+            providerSourceType = ProviderSourceTypes.CUSTOM,
+            modelId = "model",
+            displayName = "Model",
+            contextWindow = 100_000,
+        )
+        val messages = listOf(
+            AgentMessageUi(id = "first", content = "one", usage = TokenUsageUi(contextTokens = 10_000)),
+            AgentMessageUi(id = "missing", content = "two"),
+            AgentMessageUi(id = "last", content = "three", usage = TokenUsageUi(contextTokens = 82_000)),
+        )
+
+        val usage = latestContextUsage(messages, selected)
+
+        assertEquals(82_000, usage.contextTokens)
+        assertEquals(100_000, usage.contextWindow)
+        assertEquals(0.82f, usage.progress ?: 0f, 0.0001f)
+        assertEquals("82K / 100K tokens · 82.0%", formatContextUsage(usage))
+    }
+
+    @Test
+    fun contextUsageProgress_handlesMissingInvalidAndOverflowValues() {
+        assertNull(contextUsageProgress(null, 100_000))
+        assertNull(contextUsageProgress(10_000, null))
+        assertNull(contextUsageProgress(10_000, 0))
+        assertEquals(0f, contextUsageProgress(0, 100_000) ?: -1f, 0f)
+        assertEquals(1f, contextUsageProgress(120_000, 100_000) ?: -1f, 0f)
+        assertEquals("1.05M", formatCompactTokenCount(1_050_000))
+        assertEquals(
+            "No usage data yet",
+            formatContextUsage(AgentContextUsageUi(contextTokens = null, contextWindow = 100_000)),
+        )
+        assertEquals(
+            "Context window unknown, so automatic compaction is off",
+            formatContextUsage(AgentContextUsageUi(contextTokens = 12_000, contextWindow = null)),
+        )
+    }
+
+    @Test
+    fun contextUsageFormattingUsesTheRequestedLocale() {
+        assertEquals(
+            "82K / 100K tokens · 82,0%",
+            formatContextUsage(
+                usage = AgentContextUsageUi(contextTokens = 82_000, contextWindow = 100_000),
+                locale = java.util.Locale.GERMANY,
+            ),
+        )
+    }
+
+    @Test
+    fun enabledModel_requiresBothProviderAndModelEnabled() {
+        val providers = listOf(
+            provider(id = "off", enabled = false, models = listOf(model(id = "in-disabled-provider"))),
+            provider(id = "on", models = listOf(model(id = "available"), model(id = "disabled", enabled = false))),
+        )
+
+        assertEquals("on", providers.enabledModel("available")?.provider?.id)
+        assertNull(providers.enabledModel("disabled"))
+        assertNull(providers.enabledModel("in-disabled-provider"))
+        assertNull(providers.enabledModel("deleted"))
+        assertNull(providers.enabledModel(null))
+    }
+
+    @Test
+    fun deriveSessionStatsSummary_aggregatesTurnsStepsTimingAndTokens() {
+        val messages = listOf(
+            UserMessageUi(id = "u1", content = "你好"),
+            AgentMessageUi(
+                id = "a1",
+                content = "第一轮",
+                usage = TokenUsageUi(
+                    contextTokens = 1_200,
+                    inputTokens = 1_000,
+                    outputTokens = 200,
+                    reasoningTokens = 80,
+                    cachedTokens = 800,
+                    stepCount = 1,
+                    llmMs = 2_400L,
+                    ttftMs = 1_100L,
+                    ttftSteps = 1,
+                    decodeMs = 1_000L,
+                    decodeTokens = 200,
+                ),
+            ),
+            UserMessageUi(id = "u2", content = "查一下"),
+            AgentMessageUi(
+                id = "a2",
+                content = "第二轮",
+                usage = TokenUsageUi(
+                    contextTokens = 2_600,
+                    inputTokens = 2_000,
+                    outputTokens = 400,
+                    reasoningTokens = 120,
+                    cachedTokens = 1_600,
+                    stepCount = 2,
+                    llmMs = 3_600L,
+                    toolMs = 800L,
+                    ttftMs = 1_900L,
+                    ttftSteps = 2,
+                    decodeMs = 2_000L,
+                    decodeTokens = 400,
+                ),
+            ),
+        )
+
+        val stats = deriveSessionStatsSummary(messages)
+
+        assertEquals(2, stats.turns)
+        assertEquals(3, stats.steps)
+        assertEquals(6_000L, stats.llmMs)
+        assertEquals(800L, stats.toolMs)
+        assertEquals(3_000L, stats.ttftMs)
+        assertEquals(3, stats.ttftSteps)
+        assertEquals(3_000L, stats.decodeMs)
+        assertEquals(600, stats.decodeTokens)
+        assertEquals(3_000, stats.promptTokens)
+        assertEquals(600, stats.uncachedInputTokens)
+        assertEquals(2_400, stats.cachedTokens)
+        assertEquals(600, stats.outputTokens)
+        assertEquals(200, stats.reasoningTokens)
+        assertEquals(3_600, stats.totalTokens)
+        assertEquals("80", formatCacheHitPercent(stats.cachedTokens, stats.promptTokens))
+        assertEquals("2.4秒", formatStatDuration(2_400L))
+        assertEquals("1分5秒", formatStatDuration(65_000L))
+        assertEquals("200", formatTokensPerSecond(200.4))
+        assertEquals("6.8", formatTokensPerSecond(6.81))
+    }
+
+    @Test
+    fun deriveSessionStatsSummary_splitsCacheWriteMissAndSeparatesCompactionAndSubagent() {
+        val subagentSnapshot = io.github.mangi.eta.agent.subagent.SubagentActivitySnapshot(
+            subagentId = "sub-1",
+            subagentType = "explore",
+            description = "检索文件",
+            usage = io.github.mangi.eta.agent.subagent.SubagentUsageSnapshot(
+                inputTokens = 5_000,
+                cachedTokens = 4_000,
+                cacheWriteTokens = 500,
+                outputTokens = 300,
+            ),
+        ).encode()
+        val messages = listOf(
+            UserMessageUi(id = "u1", content = "问题1"),
+            AgentMessageUi(
+                id = "a1",
+                content = "回答1",
+                usage = TokenUsageUi(
+                    contextTokens = 10_200,
+                    inputTokens = 10_000,
+                    outputTokens = 200,
+                    cachedTokens = 7_000,
+                    cacheWriteTokens = 2_000,
+                    stepCount = 1,
+                ),
+            ),
+            ToolActivityMessageUi(
+                id = "t1",
+                toolName = "subagent",
+                status = ToolActivityStatusUi.Success,
+                argumentsSummary = "explore · 检索文件",
+                command = subagentSnapshot,
+            ),
+            SystemNoticeMessageUi(
+                id = "c1",
+                code = SystemNoticeCode.ContextCompaction,
+                detail = "上下文已压缩",
+                archiveId = "fold-1",
+                tokensBefore = 80_000,
+                usage = TokenUsageUi(
+                    inputTokens = 80_500,
+                    cachedTokens = 78_000,
+                    cacheWriteTokens = 500,
+                    outputTokens = 1_000,
+                    requestKind = io.github.mangi.eta.agent.runtime.AgentTokenUsage.REQUEST_KIND_COMPACTION,
+                ),
+            ),
+            UserMessageUi(id = "u2", content = "问题2"),
+            AgentMessageUi(
+                id = "a2",
+                content = "回答2",
+                usage = TokenUsageUi(
+                    contextTokens = 12_200,
+                    inputTokens = 12_000,
+                    outputTokens = 200,
+                    cachedTokens = 4_000,
+                    cacheWriteTokens = 8_000,
+                    stepCount = 1,
+                ),
+            ),
+        )
+
+        val stats = deriveSessionStatsSummary(messages)
+
+        assertEquals(22_000, stats.promptTokens)
+        assertEquals(11_000, stats.cachedTokens)
+        assertEquals(10_000, stats.cacheWriteTokens)
+        assertEquals(1_000, stats.uncachedInputTokens)
+        assertEquals(true, stats.hasCacheWriteTokens)
+        assertEquals(1, stats.compactionCount)
+        assertEquals(80_500, stats.compactionPromptTokens)
+        assertEquals(78_000, stats.compactionCachedTokens)
+        assertEquals(500, stats.compactionCacheWriteTokens)
+        assertEquals(2_000, stats.compactionUncachedTokens)
+        assertEquals("fold-1", stats.lastCompactionArchiveId)
+        assertEquals(1, stats.subagentCount)
+        assertEquals(5_000, stats.subagentPromptTokens)
+        assertEquals(4_000, stats.subagentCachedTokens)
+        assertEquals(300, stats.subagentOutputTokens)
+        // 总用量 = 普通轮次 (22000 + 400) + 压缩 (80500 + 1000) + 子智能体 (5000 + 300)
+        assertEquals(109_200, stats.totalTokens)
+    }
+
+    private fun provider(
+        id: String,
+        name: String = id,
+        sourceType: String = ProviderSourceTypes.CUSTOM,
+        enabled: Boolean = true,
+        apiKey: String = "test-key",
+        authMode: String = ProviderAuthModes.API_KEY,
+        models: List<Model>,
+    ) = CustomProviderSetting(
+        id = id,
+        name = name,
+        baseUrl = "https://example.com/$id",
+        sourceType = sourceType,
+        apiKey = apiKey,
+        authMode = authMode,
+        isEnabled = enabled,
+        models = models,
+    )
+
+    private fun model(
+        id: String,
+        modelId: String = id,
+        displayName: String = modelId,
+        enabled: Boolean = true,
+        contextWindowOverride: Int? = null,
+    ) = Model(
+        id = id,
+        modelId = modelId,
+        displayName = displayName,
+        isEnabled = enabled,
+        contextWindowOverride = contextWindowOverride,
+    )
+}

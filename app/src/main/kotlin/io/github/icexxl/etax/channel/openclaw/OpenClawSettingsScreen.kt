@@ -38,7 +38,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import top.yukonga.miuix.kmp.basic.TextButton
-import io.github.icexxl.etax.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.MiuixScaffoldPage
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
@@ -58,7 +58,7 @@ internal fun OpenClawSettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settings = remember(context) { OpenClawSettings(context) }
-    val client = remember { OpenClawClient() }
+    val client = remember { io.github.icexxl.etax.host.EtaXHost.createOpenClawClient() }
     val loaded = remember { settings.load() }
 
     var baseUrl by remember { mutableStateOf(loaded.baseUrl) }
@@ -70,6 +70,8 @@ internal fun OpenClawSettingsScreen(
     var status by remember { mutableStateOf<String?>(null) }
     var statusOk by remember { mutableStateOf(true) }
     var notificationsGranted by remember { mutableStateOf(context.hasNotificationPermission()) }
+    var backgroundSleep by remember { mutableStateOf(settings.backgroundSleepEnabled()) }
+    var fcmReady by remember { mutableStateOf(settings.fcmToken().isNotBlank()) }
     var tokenVisible by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -79,6 +81,7 @@ internal fun OpenClawSettingsScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 notificationsGranted = context.hasNotificationPermission()
+                fcmReady = settings.fcmToken().isNotBlank()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -131,6 +134,7 @@ internal fun OpenClawSettingsScreen(
         saving = true
         settings.save(currentConfig())
         settings.saveVisibleAgentIds(selected.toList())
+        settings.saveBackgroundSleepEnabled(backgroundSleep)
         status = "已保存"
         statusOk = true
         saving = false
@@ -210,6 +214,49 @@ internal fun OpenClawSettingsScreen(
                             onClick = { permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) },
                         )
                     }
+                }
+            }
+        }
+
+        item(key = "push_power") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .background(MiuixTheme.colorScheme.surfaceContainer, RoundedCornerShape(16.dp))
+                    .clickable {
+                        backgroundSleep = !backgroundSleep
+                        settings.saveBackgroundSleepEnabled(backgroundSleep)
+                    }
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = if (backgroundSleep) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank,
+                    contentDescription = null,
+                    tint = if (backgroundSleep) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantActions,
+                    modifier = Modifier.size(20.dp),
+                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 10.dp),
+                ) {
+                    Text(
+                        text = "后台休眠省电（FCM 推送唤醒）",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MiuixTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = if (fcmReady) {
+                            "FCM 已就绪 · 切后台停止轮询，由服务端高优先级推送秒唤醒通知"
+                        } else {
+                            "切后台停止轮询 · 正在等待 FCM 令牌注册"
+                        },
+                        fontSize = 11.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
                 }
             }
         }
