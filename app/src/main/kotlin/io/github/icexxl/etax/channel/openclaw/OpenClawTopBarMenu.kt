@@ -21,9 +21,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -48,21 +46,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalGlassPageBackdrop
-import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.EtaTopLayer
-import io.github.mangi.eta.ui.components.coui.CouiMenu
-import io.github.mangi.eta.ui.components.coui.CouiMenuItem
-import io.github.mangi.eta.ui.components.coui.CouiPageDefaults
-import io.github.mangi.eta.ui.components.coui.CouiTopAppBarIconButton
-import io.github.mangi.eta.ui.components.coui.couiButtonFeedback
-import io.github.mangi.eta.ui.components.coui.couiMenuAnchor
-import io.github.mangi.eta.ui.components.coui.rememberCouiMenuAnchor
+import io.github.mangi.eta.ui.components.TopLayer
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
-import io.github.suqi8.coui.kmp.icon.COUIIcons
-import io.github.suqi8.coui.kmp.icon.extended.More
-import io.github.suqi8.coui.kmp.theme.COUITheme as CouiTheme
 import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
@@ -120,55 +106,40 @@ internal fun OpenClawTopBarHeader(
         activeModel != null -> activeModel
         else -> null
     }
-    val uiStyle = LocalUiStyle.current
-    val isCoui = uiStyle == AppearanceUiStyle.COUI
     val isDark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
     val ink = MiuixTheme.colorScheme.onSurface.copy(alpha = 1f)
     val subtitleColor = ink.copy(alpha = if (isDark) 0.56f else 0.52f)
     val chevronColor = ink.copy(alpha = if (isDark) 0.46f else 0.42f)
-    val anchor = rememberCouiMenuAnchor()
     val interactionSource = remember { MutableInteractionSource() }
     val pageBackdrop = backdrop ?: LocalGlassPageBackdrop.current
 
-    val pillFill = ink.copy(alpha = if (isDark) 0.08f else 0.042f)
-    val pillBorder = ink.copy(alpha = if (isDark) 0.12f else 0.07f)
-    val capsuleModifier = if (isCoui) {
-        Modifier
-            .heightIn(min = 34.dp)
-            .clip(CircleShape)
-            .background(pillFill, CircleShape)
-            .border(0.5.dp, pillBorder, CircleShape)
-            .couiButtonFeedback(isDark, interactionSource, enabled = true)
-            .padding(start = 13.dp, end = 9.dp, top = 6.dp, bottom = 6.dp)
-    } else {
-        val pillShape = GlassShape(20.dp)
-        Modifier
-            .heightIn(min = 40.dp)
-            .glassPress(interactionSource, enabled = true)
-            .glassPanel(
-                backdrop = pageBackdrop,
-                shape = pillShape,
-                style = GlassDefaults.style(isDark),
-                material = GlassMaterials.puredThinGlass(isDark),
-                stroke = GlassEdgeStrokes.forTheme(
-                    isDark = isDark,
-                    light = GlassEdgeStrokes.SmallLight,
-                    dark = GlassEdgeStrokes.SmallDark,
-                ),
-                shadow = GlassShadows.Float,
-                shading = false,
-                fallback = Modifier
-                    .clip(CircleShape)
-                    .background(GlassTopAppBarDefaults.buttonFill()),
-            )
-            .padding(start = 15.dp, end = 10.dp, top = 8.dp, bottom = 8.dp)
-    }
+    val pillShape = GlassShape(20.dp)
+    val capsuleModifier = Modifier
+        .heightIn(min = 40.dp)
+        .glassPress(interactionSource, enabled = true)
+        .glassPanel(
+            backdrop = pageBackdrop,
+            shape = pillShape,
+            style = GlassDefaults.style(isDark),
+            material = GlassMaterials.puredThinGlass(isDark),
+            stroke = GlassEdgeStrokes.forTheme(
+                isDark = isDark,
+                light = GlassEdgeStrokes.SmallLight,
+                dark = GlassEdgeStrokes.SmallDark,
+            ),
+            shadow = GlassShadows.Float,
+            shading = false,
+            fallback = Modifier
+                .clip(CircleShape)
+                .background(GlassTopAppBarDefaults.buttonFill()),
+        )
+        .padding(start = 15.dp, end = 10.dp, top = 8.dp, bottom = 8.dp)
 
     val openModelPicker: () -> Unit = {
         if (!state.isLoadingModels) {
             store.loadModels(force = true)
         }
-        if (isCoui) anchor.open { showPopup = true } else showPopup = true
+        showPopup = true
     }
 
     Box(modifier = modifier) {
@@ -177,15 +148,8 @@ internal fun OpenClawTopBarHeader(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .onGloballyPositioned { headerAnchorBounds = it.boundsInWindow() }
-                    .couiMenuAnchor(anchor)
                     .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-                    .then(
-                        if (isCoui) {
-                            Modifier.couiButtonFeedback(isDark, interactionSource, enabled = true)
-                        } else {
-                            Modifier.glassPress(interactionSource, enabled = true)
-                        },
-                    )
+                    .glassPress(interactionSource, enabled = true)
                     .clickable(
                         interactionSource = interactionSource,
                         indication = null,
@@ -235,8 +199,6 @@ internal fun OpenClawTopBarHeader(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .onGloballyPositioned { headerAnchorBounds = it.boundsInWindow() }
-                    .couiMenuAnchor(anchor)
-                    .then(if (isCoui) capsuleModifier else Modifier)
                     .clickable(
                         interactionSource = interactionSource,
                         indication = null,
@@ -244,7 +206,7 @@ internal fun OpenClawTopBarHeader(
                         onClick = openModelPicker,
                     )
                     .semantics { contentDescription = "$agentName，切换模型" }
-                    .then(if (isCoui) Modifier else capsuleModifier),
+                    .then(capsuleModifier),
             ) {
                 Text(
                     text = agentName,
@@ -268,90 +230,39 @@ internal fun OpenClawTopBarHeader(
             }
         }
 
-        when (uiStyle) {
-            AppearanceUiStyle.COUI -> {
-                val items = remember(state.models, activeModel, activeProvider, state.isLoadingModels) {
-                    buildList {
-                        if (state.models.isEmpty()) {
-                            add(
-                                CouiMenuItem(
-                                    value = "hint",
-                                    text = if (state.isLoadingModels) "正在加载模型…" else "暂无可切换模型（需插件 0.7.14+）",
-                                    enabled = false,
-                                ),
-                            )
-                        }
-                        state.models.forEachIndexed { index, option ->
-                            val title = option.name?.takeIf { it.isNotBlank() } ?: option.model
-                            val label = if (option.isDefault) "$title（默认）" else title
-                            add(
-                                CouiMenuItem(
-                                    value = "model:$index",
-                                    text = label,
-                                    selected = isModelOptionSelected(option, activeModel, activeProvider),
-                                ),
-                            )
-                        }
-                    }
-                }
-                CouiMenu(
-                    expanded = showPopup,
+        if (isCurrentRoute) {
+            val overlayBackdrop = currentGlassOverlayBackdrop() ?: pageBackdrop
+            TopLayer {
+                GlassPopup(
+                    show = showPopup,
                     onDismissRequest = { showPopup = false },
-                    items = items,
-                    onItemClick = { item ->
-                        showPopup = false
-                        if (item.value.startsWith("model:")) {
-                            val index = item.value.removePrefix("model:").toIntOrNull()
-                            val option = index?.let { state.models.getOrNull(it) }
-                            if (option != null) {
+                    anchorBounds = headerAnchorBounds,
+                    backdrop = overlayBackdrop,
+                    sizing = GlassPopupSizing(
+                        minWidth = 228.dp,
+                        maxWidth = 310.dp,
+                        maxHeight = 380.dp,
+                    ),
+                ) {
+                    if (state.models.isEmpty()) {
+                        GlassPopupHint(
+                            if (state.isLoadingModels) "正在加载模型…" else "暂无可切换模型（需插件 0.7.14+）",
+                        )
+                    }
+                    state.models.forEach { option ->
+                        GlassSelectablePopupItem(
+                            title = option.name?.takeIf { it.isNotBlank() } ?: option.model,
+                            summary = buildModelSummary(option),
+                            selected = isModelOptionSelected(option, activeModel, activeProvider),
+                            onClick = {
+                                showPopup = false
                                 store.selectModel(
                                     model = option.model,
                                     modelProvider = option.modelProvider,
                                     isDefault = option.isDefault,
                                 )
-                            }
-                        }
-                    },
-                    anchor = anchor,
-                )
-            }
-
-            AppearanceUiStyle.MIUIX -> {
-                if (isCurrentRoute) {
-                    val overlayBackdrop = currentGlassOverlayBackdrop() ?: pageBackdrop
-                    EtaTopLayer {
-                        GlassPopup(
-                            show = showPopup,
-                            onDismissRequest = { showPopup = false },
-                            anchorBounds = headerAnchorBounds,
-                            backdrop = overlayBackdrop,
-                            sizing = GlassPopupSizing(
-                                minWidth = 228.dp,
-                                maxWidth = 310.dp,
-                                maxHeight = 380.dp,
-                            ),
-                        ) {
-                            if (state.models.isEmpty()) {
-                                GlassPopupHint(
-                                    if (state.isLoadingModels) "正在加载模型…" else "暂无可切换模型（需插件 0.7.14+）",
-                                )
-                            }
-                            state.models.forEach { option ->
-                                GlassSelectablePopupItem(
-                                    title = option.name?.takeIf { it.isNotBlank() } ?: option.model,
-                                    summary = buildModelSummary(option),
-                                    selected = isModelOptionSelected(option, activeModel, activeProvider),
-                                    onClick = {
-                                        showPopup = false
-                                        store.selectModel(
-                                            model = option.model,
-                                            modelProvider = option.modelProvider,
-                                            isDefault = option.isDefault,
-                                        )
-                                    },
-                                )
-                            }
-                        }
+                            },
+                        )
                     }
                 }
             }
@@ -372,207 +283,108 @@ internal fun OpenClawTopBarMenu(
     LaunchedEffect(isCurrentRoute) {
         if (!isCurrentRoute) show = false
     }
-    val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
-    val anchor = rememberCouiMenuAnchor()
+    val moreAnchor = rememberGlassPopupAnchor()
+    val overlayBackdrop = currentGlassOverlayBackdrop() ?: backdrop
+    GlassIconButton(
+        onClick = { show = true },
+        backdrop = backdrop,
+        modifier = Modifier.glassPopupAnchor(
+            anchor = moreAnchor,
+            cornerRadius = GlassTopAppBarDefaults.ButtonSize / 2,
+            floating = true,
+        ),
+    ) {
+        Icon(
+            imageVector = MiuixIcons.Glass.More,
+            modifier = Modifier
+                .size(28.dp)
+                .glassPopupAnchorContent(moreAnchor),
+            tint = MiuixTheme.colorScheme.onSurface,
+            contentDescription = "切换会话",
+        )
+    }
 
-    if (isCoui) {
-        val dark = CouiTheme.isDark
-        val colors = CouiPageDefaults.themeColors()
-        Box {
-            CouiTopAppBarIconButton(
-                icon = COUIIcons.More,
-                contentDescription = "切换会话",
-                modifier = Modifier.couiMenuAnchor(anchor),
-                dark = dark,
-                colors = colors,
-                onClick = { anchor.open { show = true } },
-            )
-            val items = remember(
-                state.sessions,
-                state.currentSessionKey,
-                state.isLoadingSessions,
-                state.agents,
-                state.currentAgentId,
-            ) {
-                buildList {
-                    add(CouiMenuItem(value = "header_sessions", text = "切换会话", enabled = false))
-                    if (state.sessions.isEmpty()) {
-                        add(
-                            CouiMenuItem(
-                                value = "hint_sessions",
-                                text = if (state.isLoadingSessions) "正在加载…" else "还没有会话",
-                                enabled = false,
-                            ),
-                        )
-                    }
-                    state.sessions.forEach { session ->
-                        add(
-                            CouiMenuItem(
-                                value = "session:${session.sessionKey}",
-                                text = readableSessionLabel(session.label.ifBlank { session.sessionKey }),
-                                selected = session.sessionKey == state.currentSessionKey,
-                            ),
-                        )
-                    }
-                    add(
-                        CouiMenuItem(
-                            value = "new_session",
-                            text = "新建会话",
-                            icon = Icons.Rounded.Add,
-                            dividerBefore = true,
-                        ),
+    if (isCurrentRoute) {
+        TopLayer {
+            GlassTransformPopup(
+                show = show,
+                onDismissRequest = { show = false },
+                anchor = moreAnchor,
+                backdrop = overlayBackdrop,
+                anchorContent = {
+                    Icon(
+                        imageVector = MiuixIcons.Glass.More,
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp),
+                        tint = MiuixTheme.colorScheme.onSurface,
                     )
-                    if (state.agents.size > 1) {
-                        add(
-                            CouiMenuItem(
-                                value = "header_agents",
-                                text = "切换助手",
-                                enabled = false,
-                                dividerBefore = true,
-                            ),
-                        )
-                        state.agents.forEach { agent ->
-                            add(
-                                CouiMenuItem(
-                                    value = "agent:${agent.id}",
-                                    text = agent.name.ifBlank { agent.id },
-                                    selected = agent.id == state.currentAgentId,
-                                ),
-                            )
-                        }
-                    }
-                    add(
-                        CouiMenuItem(
-                            value = "settings",
-                            text = "设置",
-                            icon = Icons.Rounded.Settings,
-                            dividerBefore = true,
-                        ),
+                },
+            ) {
+                if (state.sessions.isEmpty()) {
+                    GlassPopupHint(if (state.isLoadingSessions) "正在加载…" else "还没有会话")
+                }
+                state.sessions.forEach { session ->
+                    GlassSelectablePopupItem(
+                        title = readableSessionLabel(session.label.ifBlank { session.sessionKey }),
+                        summary = buildSessionSummary(session),
+                        selected = session.sessionKey == state.currentSessionKey,
+                        unread = session.sessionKey in state.unreadSessions,
+                        onClick = {
+                            show = false
+                            store.selectSession(session.sessionKey)
+                        },
                     )
                 }
-            }
-            CouiMenu(
-                expanded = show,
-                onDismissRequest = { show = false },
-                items = items,
-                onItemClick = { item ->
-                    show = false
-                    when {
-                        item.value.startsWith("session:") ->
-                            store.selectSession(item.value.removePrefix("session:"))
-                        item.value == "new_session" -> store.newSession(state.currentAgentId)
-                        item.value.startsWith("agent:") ->
-                            store.selectAgent(item.value.removePrefix("agent:"))
-                        item.value == "settings" -> onOpenSettings()
-                    }
-                },
-                anchor = anchor,
-            )
-        }
-    } else {
-        val moreAnchor = rememberGlassPopupAnchor()
-        val overlayBackdrop = currentGlassOverlayBackdrop() ?: backdrop
-        GlassIconButton(
-            onClick = { show = true },
-            backdrop = backdrop,
-            modifier = Modifier.glassPopupAnchor(
-                anchor = moreAnchor,
-                cornerRadius = GlassTopAppBarDefaults.ButtonSize / 2,
-                floating = true,
-            ),
-        ) {
-            Icon(
-                imageVector = MiuixIcons.Glass.More,
-                modifier = Modifier
-                    .size(28.dp)
-                    .glassPopupAnchorContent(moreAnchor),
-                tint = MiuixTheme.colorScheme.onSurface,
-                contentDescription = "切换会话",
-            )
-        }
-
-        if (isCurrentRoute) {
-            EtaTopLayer {
-                GlassTransformPopup(
-                    show = show,
-                    onDismissRequest = { show = false },
-                    anchor = moreAnchor,
-                    backdrop = overlayBackdrop,
-                    anchorContent = {
-                        Icon(
-                            imageVector = MiuixIcons.Glass.More,
-                            contentDescription = null,
-                            modifier = Modifier.size(28.dp),
-                            tint = MiuixTheme.colorScheme.onSurface,
-                        )
+                HorizontalDivider(
+                    modifier = Modifier.padding(
+                        horizontal = GlassPopupDefaults.DividerPaddingHorizontal,
+                        vertical = GlassPopupDefaults.DividerPaddingVertical,
+                    ),
+                    thickness = GlassPopupDefaults.DividerThickness,
+                )
+                GlassPopupItem(
+                    text = "新建会话",
+                    icon = MiuixIcons.Glass.NewMessage,
+                    onClick = {
+                        show = false
+                        store.newSession(state.currentAgentId)
                     },
-                ) {
-                    if (state.sessions.isEmpty()) {
-                        GlassPopupHint(if (state.isLoadingSessions) "正在加载…" else "还没有会话")
-                    }
-                    state.sessions.forEach { session ->
+                )
+                if (state.agents.size > 1) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(
+                            horizontal = GlassPopupDefaults.DividerPaddingHorizontal,
+                            vertical = GlassPopupDefaults.DividerPaddingVertical,
+                        ),
+                        thickness = GlassPopupDefaults.DividerThickness,
+                    )
+                    state.agents.forEach { agent ->
                         GlassSelectablePopupItem(
-                            title = readableSessionLabel(session.label.ifBlank { session.sessionKey }),
-                            summary = buildSessionSummary(session),
-                            selected = session.sessionKey == state.currentSessionKey,
-                            unread = session.sessionKey in state.unreadSessions,
+                            title = agent.name.ifBlank { agent.id },
+                            summary = agent.id.takeIf { agent.name.isNotBlank() && agent.name != it },
+                            selected = agent.id == state.currentAgentId,
                             onClick = {
                                 show = false
-                                store.selectSession(session.sessionKey)
+                                store.selectAgent(agent.id)
                             },
                         )
                     }
-                    HorizontalDivider(
-                        modifier = Modifier.padding(
-                            horizontal = GlassPopupDefaults.DividerPaddingHorizontal,
-                            vertical = GlassPopupDefaults.DividerPaddingVertical,
-                        ),
-                        thickness = GlassPopupDefaults.DividerThickness,
-                    )
-                    GlassPopupItem(
-                        text = "新建会话",
-                        icon = MiuixIcons.Glass.NewMessage,
-                        onClick = {
-                            show = false
-                            store.newSession(state.currentAgentId)
-                        },
-                    )
-                    if (state.agents.size > 1) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(
-                                horizontal = GlassPopupDefaults.DividerPaddingHorizontal,
-                                vertical = GlassPopupDefaults.DividerPaddingVertical,
-                            ),
-                            thickness = GlassPopupDefaults.DividerThickness,
-                        )
-                        state.agents.forEach { agent ->
-                            GlassSelectablePopupItem(
-                                title = agent.name.ifBlank { agent.id },
-                                summary = agent.id.takeIf { agent.name.isNotBlank() && agent.name != it },
-                                selected = agent.id == state.currentAgentId,
-                                onClick = {
-                                    show = false
-                                    store.selectAgent(agent.id)
-                                },
-                            )
-                        }
-                    }
-                    HorizontalDivider(
-                        modifier = Modifier.padding(
-                            horizontal = GlassPopupDefaults.DividerPaddingHorizontal,
-                            vertical = GlassPopupDefaults.DividerPaddingVertical,
-                        ),
-                        thickness = GlassPopupDefaults.DividerThickness,
-                    )
-                    GlassPopupItem(
-                        text = "设置",
-                        icon = MiuixIcons.Glass.SettingsOutline,
-                        onClick = {
-                            show = false
-                            onOpenSettings()
-                        },
-                    )
                 }
+                HorizontalDivider(
+                    modifier = Modifier.padding(
+                        horizontal = GlassPopupDefaults.DividerPaddingHorizontal,
+                        vertical = GlassPopupDefaults.DividerPaddingVertical,
+                    ),
+                    thickness = GlassPopupDefaults.DividerThickness,
+                )
+                GlassPopupItem(
+                    text = "设置",
+                    icon = MiuixIcons.Glass.SettingsOutline,
+                    onClick = {
+                        show = false
+                        onOpenSettings()
+                    },
+                )
             }
         }
     }

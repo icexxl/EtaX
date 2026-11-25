@@ -44,14 +44,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.mangi.eta.data.model.AppearanceUiStyle
 import io.github.mangi.eta.ui.app.LocalGlassPageBackdrop
-import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.EtaTopLayer
-import io.github.mangi.eta.ui.components.coui.CouiMenu
-import io.github.mangi.eta.ui.components.coui.CouiMenuItem
-import io.github.mangi.eta.ui.components.coui.couiMenuAnchor
-import io.github.mangi.eta.ui.components.coui.rememberCouiMenuAnchor
+import io.github.mangi.eta.ui.components.TopLayer
 import io.github.mangi.eta.ui.components.currentGlassOverlayBackdrop
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
@@ -223,7 +217,7 @@ internal fun OpenClawToolsStrip(
     }
 }
 
-/** 输入框工具栏里的思考强度切换按钮（支持 Miuix 玻璃弹窗与 COUI 菜单）。 */
+/** 输入框工具栏里的思考强度切换按钮（Miuix 玻璃弹窗）。 */
 @Composable
 internal fun OpenClawThinkingChip(
     currentLevel: String?,
@@ -232,15 +226,12 @@ internal fun OpenClawThinkingChip(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val uiStyle = LocalUiStyle.current
-    val isCoui = uiStyle == AppearanceUiStyle.COUI
     val isDark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
     val ink = MiuixTheme.colorScheme.onSurface
     val norm = currentLevel?.trim()?.lowercase().orEmpty()
     val isCustomActive = norm.isNotEmpty() && norm != "default" && norm != "off"
     var showMenu by remember { mutableStateOf(false) }
     var anchorBounds by remember { mutableStateOf(Rect.Zero) }
-    val couiAnchor = rememberCouiMenuAnchor()
 
     val chipBg = when {
         isCustomActive -> MiuixTheme.colorScheme.primary.copy(alpha = if (isDark) 0.18f else 0.12f)
@@ -257,11 +248,10 @@ internal fun OpenClawThinkingChip(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .onGloballyPositioned { anchorBounds = it.boundsInWindow() }
-                .couiMenuAnchor(couiAnchor)
                 .clip(CircleShape)
                 .background(chipBg)
                 .clickable(enabled = enabled && !switching) {
-                    if (isCoui) couiAnchor.open { showMenu = true } else showMenu = true
+                    showMenu = true
                 }
                 .padding(horizontal = 9.dp, vertical = 5.dp),
         ) {
@@ -282,51 +272,29 @@ internal fun OpenClawThinkingChip(
         }
 
         val effectiveSelected = norm.ifEmpty { "default" }
-        if (isCoui) {
-            val items = remember(effectiveSelected) {
-                OpenClawThinkingOptions.map { opt ->
-                    CouiMenuItem(
-                        value = opt.value,
-                        text = opt.label,
-                        selected = opt.value == effectiveSelected,
-                    )
-                }
-            }
-            CouiMenu(
-                expanded = showMenu,
+        val overlayBackdrop = currentGlassOverlayBackdrop() ?: LocalGlassPageBackdrop.current
+        TopLayer {
+            GlassPopup(
+                show = showMenu,
                 onDismissRequest = { showMenu = false },
-                items = items,
-                onItemClick = { item ->
-                    showMenu = false
-                    onSelect(item.value)
-                },
-                anchor = couiAnchor,
-            )
-        } else {
-            val overlayBackdrop = currentGlassOverlayBackdrop() ?: LocalGlassPageBackdrop.current
-            EtaTopLayer {
-                GlassPopup(
-                    show = showMenu,
-                    onDismissRequest = { showMenu = false },
-                    anchorBounds = anchorBounds,
-                    backdrop = overlayBackdrop,
-                    sizing = GlassPopupSizing(
-                        minWidth = 210.dp,
-                        maxWidth = 270.dp,
-                        maxHeight = 340.dp,
-                    ),
-                ) {
-                    OpenClawThinkingOptions.forEach { opt ->
-                        GlassSelectablePopupItem(
-                            title = opt.label,
-                            summary = opt.summary,
-                            selected = opt.value == effectiveSelected,
-                            onClick = {
-                                showMenu = false
-                                onSelect(opt.value)
-                            },
-                        )
-                    }
+                anchorBounds = anchorBounds,
+                backdrop = overlayBackdrop,
+                sizing = GlassPopupSizing(
+                    minWidth = 210.dp,
+                    maxWidth = 270.dp,
+                    maxHeight = 340.dp,
+                ),
+            ) {
+                OpenClawThinkingOptions.forEach { opt ->
+                    GlassSelectablePopupItem(
+                        title = opt.label,
+                        summary = opt.summary,
+                        selected = opt.value == effectiveSelected,
+                        onClick = {
+                            showMenu = false
+                            onSelect(opt.value)
+                        },
+                    )
                 }
             }
         }

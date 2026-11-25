@@ -11,7 +11,7 @@ import io.github.icexxl.etax.channel.openclaw.OpenClawNetworkMonitor
 import io.github.icexxl.etax.channel.openclaw.OpenClawNotifier
 import io.github.icexxl.etax.channel.openclaw.OpenClawSettings
 import io.github.mangi.eta.R
-import io.github.mangi.eta.agent.model.AgentHttpClient
+import io.github.mangi.eta.agent.model.provider.AgentHttpClient
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.ui.MainActivity
 import io.github.mangi.eta.ui.model.AgentContextUsageUi

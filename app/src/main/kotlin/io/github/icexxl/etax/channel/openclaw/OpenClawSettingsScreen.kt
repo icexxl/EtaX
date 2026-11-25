@@ -38,7 +38,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import top.yukonga.miuix.kmp.basic.TextButton
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
@@ -144,7 +144,7 @@ internal fun OpenClawSettingsScreen(
         onSaved()
     }
 
-    MiuixScaffoldPage(
+    ScaffoldPage(
         title = "OpenClaw 渠道",
         onBack = onBack,
         modifier = modifier,

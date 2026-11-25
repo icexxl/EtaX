@@ -87,6 +87,6 @@ internal object AppUpdateChecker {
         .readTimeout(8, TimeUnit.SECONDS)
         .build()
 
-    private const val LATEST_RELEASE_URL = "https://api.github.com/repos/Mangi-11/Eta/releases/latest"
+    private const val LATEST_RELEASE_URL = "https://api.github.com/repos/icexxl/EtaX/releases/latest"
     private const val USER_AGENT = "Eta-Update-Checker"
 }

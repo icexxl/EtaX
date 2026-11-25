@@ -12,7 +12,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.agent.virtualdisplay.VirtualDisplayController
-import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.ScaffoldPage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -32,7 +32,7 @@ internal fun VScreenSettingsScreen(onBack: () -> Unit, modifier: Modifier = Modi
     }
     var busy by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<String?>(null) }
-    MiuixScaffoldPage(title = "后台虚拟屏", onBack = onBack, modifier = modifier) {
+    ScaffoldPage(title = "后台虚拟屏", onBack = onBack, modifier = modifier) {
         item(key = "vscreen_status") {
             Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(when (state) {

@@ -80,19 +80,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.icexxl.etax.host.EtaXHost.toUi
 import io.github.mangi.eta.R
-import io.github.mangi.eta.agent.voice.EtaSpeechPhase
-import io.github.mangi.eta.data.model.AppearanceUiStyle
+import io.github.mangi.eta.agent.voice.ui.EtaSpeechPhase
 import io.github.mangi.eta.data.repository.SpeechSettingsRepository
-import io.github.mangi.eta.ui.app.LocalUiStyle
-import io.github.mangi.eta.ui.components.AgentContextUsageButton
-import io.github.mangi.eta.ui.components.BottomFollowDecision
+import io.github.mangi.eta.ui.components.SpeechDictationButton
+import io.github.mangi.eta.ui.components.SpeechInputFeedback
 import io.github.mangi.eta.ui.components.StatusError
 import io.github.mangi.eta.ui.components.captureGlassBackdrop
-import io.github.mangi.eta.ui.components.coui.rememberCouiPageBackdrop
-import io.github.icexxl.etax.ui.components.openClawInputSurface
+import io.github.mangi.eta.ui.components.chat.AgentContextUsageButton
+import io.github.mangi.eta.ui.components.chat.BottomFollowDecision
+import io.github.mangi.eta.ui.components.chat.resolveBottomFollowDecision
+import io.github.mangi.eta.ui.components.chat.smoothBottomFollowStep
 import io.github.mangi.eta.ui.components.rememberGlassBackdrop
-import io.github.mangi.eta.ui.components.resolveBottomFollowDecision
-import io.github.mangi.eta.ui.components.smoothBottomFollowStep
+import io.github.mangi.eta.ui.components.rememberSpeechInput
+import io.github.icexxl.etax.ui.components.openClawInputSurface
 import io.github.mangi.eta.ui.markdown.EditorialLineHeightStyle
 import io.github.mangi.eta.ui.markdown.MarkdownTone
 import io.github.mangi.eta.ui.markdown.StaticMarkdown
@@ -103,11 +103,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
-import io.github.mangi.eta.ui.voice.SpeechDictationButton
-import io.github.mangi.eta.ui.voice.SpeechInputFeedback
-import io.github.mangi.eta.ui.voice.rememberSpeechInput
-import io.github.suqi8.coui.kmp.blur.layerBackdrop as couiLayerBackdrop
-import io.github.suqi8.coui.kmp.theme.COUITheme as CouiTheme
 import java.io.File
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Icon
@@ -342,10 +337,7 @@ internal fun OpenClawChatScreen(
             }
         }
     }
-    val isCoui = LocalUiStyle.current == AppearanceUiStyle.COUI
-    val chatBackdrop = if (isCoui) null else rememberGlassBackdrop()
-    val couiChatBackdrop = if (isCoui) rememberCouiPageBackdrop(CouiTheme.colorScheme.backgroundWithCard) else null
-    val couiCapture = if (couiChatBackdrop == null) Modifier else Modifier.couiLayerBackdrop(couiChatBackdrop)
+    val chatBackdrop = rememberGlassBackdrop()
     val speechSettings by remember { SpeechSettingsRepository.settingsFlow() }.collectAsState(initial = null)
     val recognitionEnabled = speechSettings?.recognitionEnabled == true
     val latestPendingAttachment = androidx.compose.runtime.rememberUpdatedState(pendingAttachment)
@@ -412,8 +404,7 @@ internal fun OpenClawChatScreen(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .captureGlassBackdrop(chatBackdrop)
-                .then(couiCapture),
+                .captureGlassBackdrop(chatBackdrop),
             contentPadding = PaddingValues(top = topInset + 10.dp, bottom = composerHeight + 24.dp),
             verticalArrangement = Arrangement.Top,
         ) {
@@ -545,7 +536,7 @@ internal fun OpenClawChatScreen(
             }
             if (activity != null) {
                 // 与主对话一致的扫光：主色高光缓慢掠过文字
-                io.github.mangi.eta.ui.components.ShimmerText(
+                io.github.mangi.eta.ui.components.chat.ShimmerText(
                     text = activity,
                     active = state.sending || state.isRunActive,
                     style = MiuixTheme.textStyles.body2.copy(fontSize = 11.sp),
@@ -620,7 +611,6 @@ internal fun OpenClawChatScreen(
                         .fillMaxWidth()
                         .openClawInputSurface(
                             glassBackdrop = chatBackdrop,
-                            couiBackdrop = couiChatBackdrop,
                             isHoldingSpeech = isHoldingSpeech,
                             holdCancelling = holdCancelling,
                         )
@@ -732,9 +722,9 @@ internal fun OpenClawChatScreen(
                             minHeight = 34.dp,
                         ) {
                             Icon(
-                                imageVector = if (isCoui) Icons.Rounded.Add else MiuixIcons.Glass.Add,
+                                imageVector = MiuixIcons.Glass.Add,
                                 contentDescription = "添加附件",
-                                modifier = Modifier.size(if (isCoui) 21.dp else 23.dp),
+                                modifier = Modifier.size(23.dp),
                                 tint = if (enabled) {
                                     MiuixTheme.colorScheme.onSurface.copy(alpha = 0.72f)
                                 } else {
@@ -1007,9 +997,7 @@ private fun ChatBubble(
                     .widthIn(max = 316.dp)
                     .clip(OpenClawUserBubbleShape)
                     .background(
-                        color = if (LocalUiStyle.current == AppearanceUiStyle.COUI) {
-                            if (CouiTheme.isDark) Color(0xFF202634) else Color(0xFFEEF2FA)
-                        } else MiuixTheme.colorScheme.surfaceContainerHigh,
+                        color = MiuixTheme.colorScheme.surfaceContainerHigh,
                         shape = OpenClawUserBubbleShape,
                     )
                     .padding(horizontal = 16.dp, vertical = 10.5.dp),
